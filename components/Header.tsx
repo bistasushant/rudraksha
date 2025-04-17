@@ -221,7 +221,7 @@ export default function Header() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center group">
-              <div className="relative p-7 transition-transform group-hover:scale-105">
+              <div className="relative p-2 transition-transform group-hover:scale-105">
                 {logoUrl ? (
                   <Image
                     src={logoUrl}

@@ -47,6 +47,26 @@ const AddBlogForm = () => {
   const debouncedSearchTerm = useDebounce(searchTerm, 1000);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [blogName, setBlogName] = useState("");
+  const [blogHeading, setBlogHeading] = useState("");
+  const [blogDescription, setBlogDescription] = useState("");
+
+  // State for form errors
+  const [formErrors, setFormErrors] = useState<{
+    blogName: string;
+    blogHeading: string;
+    blogDescription: string;
+    selectedCategories: string;
+    image: string;
+    general: string;
+  }>({
+    blogName: "",
+    blogHeading: "",
+    blogDescription: "",
+    selectedCategories: "",
+    image: "",
+    general: "",
+  });
 
   useEffect(() => {
     if (!admin?.token) {
@@ -79,7 +99,7 @@ const AddBlogForm = () => {
         }
 
         const result = await response.json();
-        const categoriesData = result.data?.blogCategories || []; // Fixed to use blogCategories
+        const categoriesData = result.data?.blogCategories || [];
         setCategories(categoriesData);
       } catch (error) {
         console.error("Error fetching blog categories:", error);
@@ -96,35 +116,147 @@ const AddBlogForm = () => {
     fetchBlogCategories();
   }, [admin, router]);
 
+  // Validation function
+  const validateField = (name: string, value: any) => {
+    let error = "";
+    switch (name) {
+      case "blogName":
+        if (!value?.trim()) {
+          error = "Blog name cannot be empty.";
+        } else if (value.trim().length < 3) {
+          error = "Blog name must be at least 3 characters long.";
+        }
+        break;
+      case "blogHeading":
+        if (!value?.trim()) {
+          error = "Blog heading cannot be empty.";
+        } else if (value.trim().length < 3) {
+          error = "Blog heading must be at least 3 characters long.";
+        }
+        break;
+      case "blogDescription":
+        if (!value?.trim()) {
+          error = "Blog description cannot be empty.";
+        } else if (value.trim().length < 10) {
+          error = "Blog description must be at least 10 characters long.";
+        }
+        break;
+      case "selectedCategories":
+        if (value.length === 0) {
+          error = "At least one category must be selected.";
+        }
+        break;
+      case "image":
+        if (!value) {
+          error = "Blog image is required.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
+  };
+
+  // Handle input change with validation
+  const handleInputChange = (
+    field: string,
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { value } = e.target;
+    if (field === "blogName") setBlogName(value);
+    if (field === "blogHeading") setBlogHeading(value);
+    if (field === "blogDescription") setBlogDescription(value);
+
+    // Validate on change
+    const error = validateField(field, value);
+    setFormErrors((prev) => ({ ...prev, [field]: error }));
+  };
+
+  // Handle blur with validation
+  const handleBlur = (
+    field: string,
+    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { value } = e.target;
+    const error = validateField(field, value);
+    setFormErrors((prev) => ({ ...prev, [field]: error }));
+  };
+
+  // Validate categories when toggled
+  const handleCategoryToggle = (categoryId: string) => {
+    setSelectedCategories((prev) => {
+      const newCategories = prev.includes(categoryId)
+        ? prev.filter((cat) => cat !== categoryId)
+        : [...prev, categoryId];
+      const error = validateField("selectedCategories", newCategories);
+      setFormErrors((prev) => ({ ...prev, selectedCategories: error }));
+      return newCategories;
+    });
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
         toast.error("File size exceeds 2MB limit.");
+        setFormErrors((prev) => ({
+          ...prev,
+          image: "File size exceeds 2MB limit.",
+        }));
         return;
       }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
+        const imageData = reader.result as string;
+        setSelectedImage(imageData);
+        const error = validateField("image", imageData);
+        setFormErrors((prev) => ({ ...prev, image: error }));
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleCategoryToggle = (categoryId: string) => {
-    setSelectedCategories((prev) =>
-      prev.includes(categoryId)
-        ? prev.filter((cat) => cat !== categoryId)
-        : [...prev, categoryId]
-    );
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    const error = validateField("image", null);
+    setFormErrors((prev) => ({ ...prev, image: error }));
+  };
+
+  // Validate entire form before submission
+  const validateForm = () => {
+    const errors = {
+      blogName: validateField("blogName", blogName),
+      blogHeading: validateField("blogHeading", blogHeading),
+      blogDescription: validateField("blogDescription", blogDescription),
+      selectedCategories: validateField(
+        "selectedCategories",
+        selectedCategories
+      ),
+      image: validateField("image", selectedImage),
+      general: "",
+    };
+    setFormErrors(errors);
+
+    return !Object.values(errors).some((error) => error);
   };
 
   const resetForm = (form: HTMLFormElement) => {
     form.reset();
+    setBlogName("");
+    setBlogHeading("");
+    setBlogDescription("");
     setSelectedImage(null);
     setSelectedCategories([]);
     setIsDropdownOpen(false);
     setSearchTerm("");
+    setFormErrors({
+      blogName: "",
+      blogHeading: "",
+      blogDescription: "",
+      selectedCategories: "",
+      image: "",
+      general: "",
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -139,34 +271,8 @@ const AddBlogForm = () => {
       return;
     }
 
-    if (!selectedImage) {
-      toast.error("Image is required.");
-      setIsSubmitting(false);
-      return;
-    }
-
-    const formData = new FormData(form);
-    const blogName = formData.get("blogName") as string;
-    const blogHeading = formData.get("blogHeading") as string;
-    const blogDescription = formData.get("blogDescription") as string;
-
-    if (!blogName?.trim()) {
-      toast.error("Blog name is required.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (!blogHeading?.trim()) {
-      toast.error("Blog heading is required.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (selectedCategories.length === 0) {
-      toast.error("At least one category must be selected.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (!blogDescription?.trim()) {
-      toast.error("Description is required.");
+    if (!validateForm()) {
+      toast.error("Please fix the form errors before submitting.");
       setIsSubmitting(false);
       return;
     }
@@ -201,6 +307,13 @@ const AddBlogForm = () => {
       router.push("/admin/dashboard/blog");
     } catch (error) {
       console.error("Add Blog Error:", error);
+      setFormErrors((prev) => ({
+        ...prev,
+        general:
+          error instanceof Error
+            ? error.message
+            : "An error occurred while adding the blog.",
+      }));
       toast.error(
         error instanceof Error
           ? error.message
@@ -242,11 +355,13 @@ const AddBlogForm = () => {
         <CardContent>
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div className="space-y-2">
-              <Label className="text-white/80">Blog Image</Label>
+              <Label className="text-white/80">Blog Image *</Label>
               <div className="relative group w-full max-w-md mx-auto">
                 <label
                   htmlFor="image-upload"
-                  className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-white/30 rounded-lg cursor-pointer hover:border-purple-500 transition-colors"
+                  className={`flex flex-col items-center justify-center h-48 border-2 border-dashed rounded-lg cursor-pointer hover:border-purple-500 transition-colors ${
+                    formErrors.image ? "border-red-500" : "border-white/30"
+                  }`}
                 >
                   {selectedImage ? (
                     <div className="relative w-full h-full p-2">
@@ -260,7 +375,7 @@ const AddBlogForm = () => {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedImage(null);
+                          handleRemoveImage();
                         }}
                         className="absolute top-2 right-2 p-1 bg-red-500/80 rounded-full hover:bg-red-400 transition-colors"
                       >
@@ -286,36 +401,66 @@ const AddBlogForm = () => {
                   accept="image/*"
                   className="hidden"
                   onChange={handleImageUpload}
+                  disabled={isSubmitting}
                 />
+                {formErrors.image && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {formErrors.image}
+                  </p>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-2">
-                <Label className="text-white/80">Blog Name</Label>
+                <Label className="text-white/80">Blog Name *</Label>
                 <Input
                   name="blogName"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.blogName ? "border-red-500" : "border-white/20"
+                  }`}
                   placeholder="Enter blog name"
                   required
+                  value={blogName}
+                  onChange={(e) => handleInputChange("blogName", e)}
+                  onBlur={(e) => handleBlur("blogName", e)}
                   disabled={isSubmitting}
                 />
+                {formErrors.blogName && (
+                  <p className="text-red-500 text-sm">{formErrors.blogName}</p>
+                )}
               </div>
               <div className="space-y-2">
-                <Label className="text-white/80">Blog Heading</Label>
+                <Label className="text-white/80">Blog Heading *</Label>
                 <Input
                   name="blogHeading"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.blogHeading
+                      ? "border-red-500"
+                      : "border-white/20"
+                  }`}
                   placeholder="Enter Blog Heading"
                   required
+                  value={blogHeading}
+                  onChange={(e) => handleInputChange("blogHeading", e)}
+                  onBlur={(e) => handleBlur("blogHeading", e)}
                   disabled={isSubmitting}
                 />
+                {formErrors.blogHeading && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.blogHeading}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
-                <Label className="text-white/80">Blog Categories</Label>
+                <Label className="text-white/80">Blog Categories *</Label>
                 <div className="relative">
                   <button
                     type="button"
-                    className="flex items-center justify-between w-full bg-white/5 border-white/20 focus:ring-2 focus:ring-gray-500 text-white rounded-lg px-4 py-2"
+                    className={`flex items-center justify-between w-full bg-white/5 rounded-lg px-4 py-2 text-white ${
+                      formErrors.selectedCategories
+                        ? "border-red-500"
+                        : "border-white/20"
+                    } focus:ring-2 focus:ring-gray-500`}
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                     disabled={isSubmitting}
                   >
@@ -353,7 +498,11 @@ const AddBlogForm = () => {
                       }`}
                     />
                   </button>
-
+                  {formErrors.selectedCategories && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {formErrors.selectedCategories}
+                    </p>
+                  )}
                   {isDropdownOpen && (
                     <div className="absolute z-10 mt-1 w-full bg-slate-900 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                       <div className="p-2">
@@ -400,18 +549,32 @@ const AddBlogForm = () => {
                   )}
                 </div>
               </div>
-
               <div className="space-y-2">
-                <Label className="text-white/80">Description</Label>
+                <Label className="text-white/80">Description *</Label>
                 <Textarea
                   name="blogDescription"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white h-32 w-full"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white h-32 w-full ${
+                    formErrors.blogDescription
+                      ? "border-red-500"
+                      : "border-white/20"
+                  }`}
                   placeholder="Describe the blog..."
                   required
+                  value={blogDescription}
+                  onChange={(e) => handleInputChange("blogDescription", e)}
+                  onBlur={(e) => handleBlur("blogDescription", e)}
                   disabled={isSubmitting}
                 />
+                {formErrors.blogDescription && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.blogDescription}
+                  </p>
+                )}
               </div>
             </div>
+            {formErrors.general && (
+              <p className="text-red-500 text-sm">{formErrors.general}</p>
+            )}
             <div className="flex gap-4 justify-end">
               <Button
                 type="button"

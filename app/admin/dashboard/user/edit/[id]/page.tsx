@@ -28,10 +28,18 @@ interface UserProfile {
 const EditUserPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formErrors, setFormErrors] = useState({
+  const [formErrors, setFormErrors] = useState<{
+    name: string;
+    email: string;
+    contactNumber: string;
+    role: string;
+    general: string;
+  }>({
     name: "",
     email: "",
     contactNumber: "",
+    role: "",
+    general: "",
   });
   const [userData, setUserData] = useState<UserProfile>({
     id: "",
@@ -87,6 +95,18 @@ const EditUserPage = () => {
           contactNumber: user.contactNumber || "",
           role: user.role,
         });
+
+        // Validate initial form data
+        setFormErrors({
+          name: validateField("name", user.name),
+          email: validateField("email", user.email),
+          contactNumber: validateField("contactNumber", {
+            value: user.contactNumber,
+            role: user.role,
+          }),
+          role: validateField("role", user.role),
+          general: "",
+        });
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Failed to fetch user data"
@@ -100,36 +120,91 @@ const EditUserPage = () => {
     fetchUserData();
   }, [userEmail, admin, router]);
 
-  const validateForm = () => {
-    const errors = {
-      name: userData.name.trim() ? "" : "Name is required",
-      email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userData.email)
-        ? ""
-        : "Invalid email format",
-      contactNumber:
-        userData.role === "user" && !userData.contactNumber.trim()
-          ? "Contact number is required for user role"
-          : "",
-    };
-    setFormErrors(errors);
-    return !Object.values(errors).some((error) => error);
+  // Validation function
+  const validateField = (
+    name: string,
+    value: any,
+    roleForContactNumber: AdminRole = userData.role
+  ) => {
+    let error = "";
+    switch (name) {
+      case "name":
+        if (!value?.trim()) {
+          error = "Name cannot be empty.";
+        } else if (value.trim().length < 3) {
+          error = "Name must be at least 3 characters long.";
+        }
+        break;
+      case "email":
+        if (!value?.trim()) {
+          error = "Email cannot be empty.";
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+          error = "Please enter a valid email address (e.g., user@domain.com).";
+        }
+        break;
+      case "contactNumber":
+        const contactValue = value?.value || value || "";
+        if (roleForContactNumber === "user" && !contactValue.trim()) {
+          error = "Contact number is required for user role.";
+        } else if (
+          contactValue.trim() &&
+          !/^\d{10}$/.test(contactValue.trim())
+        ) {
+          error = "Contact number must be exactly 10 digits.";
+        }
+        break;
+      case "role":
+        if (!value || !roles.includes(value)) {
+          error = "Please select a valid role.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setUserData((prev) => ({ ...prev, [name]: value }));
-    setFormErrors((prev) => ({ ...prev, [name]: "" }));
+
+    // Validate on change
+    const error = validateField(name, value);
+    setFormErrors((prev) => ({ ...prev, [name]: error }));
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const error = validateField(name, value);
+    setFormErrors((prev) => ({ ...prev, [name]: error }));
   };
 
   const handleRoleChange = (role: AdminRole) => {
     setUserData((prev) => ({ ...prev, role }));
+    const roleError = validateField("role", role);
+    const contactError = validateField(
+      "contactNumber",
+      userData.contactNumber,
+      role
+    );
     setFormErrors((prev) => ({
       ...prev,
-      contactNumber:
-        role === "user" && !prev.contactNumber
-          ? "Contact number is required for user role"
-          : "",
+      role: roleError,
+      contactNumber: contactError,
     }));
+  };
+
+  // Validate entire form before submission
+  const validateForm = () => {
+    const errors = {
+      name: validateField("name", userData.name),
+      email: validateField("email", userData.email),
+      contactNumber: validateField("contactNumber", userData.contactNumber),
+      role: validateField("role", userData.role),
+      general: "",
+    };
+    setFormErrors(errors);
+    return !Object.values(errors).some((error) => error);
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -137,11 +212,13 @@ const EditUserPage = () => {
 
     if (!admin?.token || admin.role !== "admin") {
       toast.error("Only admins can update user profiles");
+      setIsSubmitting(false);
       return;
     }
 
     if (!validateForm()) {
       toast.error("Please fix form errors");
+      setIsSubmitting(false);
       return;
     }
 
@@ -172,6 +249,10 @@ const EditUserPage = () => {
             "Cannot update customers here. Use the customer management page."
           );
         } else if (response.status === 409) {
+          setFormErrors((prev) => ({
+            ...prev,
+            general: "Email already exists",
+          }));
           toast.error("Email already exists");
         } else {
           throw new Error(data.message || "Failed to update user");
@@ -182,9 +263,10 @@ const EditUserPage = () => {
       toast.success("User updated successfully");
       router.push("/admin/dashboard/user");
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to update user"
-      );
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to update user";
+      setFormErrors((prev) => ({ ...prev, general: errorMessage }));
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -224,13 +306,17 @@ const EditUserPage = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-2">
-                <Label className="text-white/80">User Role</Label>
+                <Label className="text-white/80">User Role *</Label>
                 <Select
                   value={userData.role}
                   onValueChange={handleRoleChange}
                   disabled={isSubmitting}
                 >
-                  <SelectTrigger className="bg-white/5 border-white/20 text-white">
+                  <SelectTrigger
+                    className={`bg-white/5 text-white ${
+                      formErrors.role ? "border-red-500" : "border-white/20"
+                    } focus:ring-2 focus:ring-purple-500`}
+                  >
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-white/20 text-white">
@@ -241,16 +327,22 @@ const EditUserPage = () => {
                     ))}
                   </SelectContent>
                 </Select>
+                {formErrors.role && (
+                  <p className="text-red-400 text-sm">{formErrors.role}</p>
+                )}
               </div>
               <div className="space-y-2">
-                <Label className="text-white/80">User Name</Label>
+                <Label className="text-white/80">User Name *</Label>
                 <Input
                   id="name"
                   name="name"
                   value={userData.name}
                   onChange={handleInputChange}
+                  onBlur={handleBlur}
                   placeholder="Enter user name"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white ${
+                    formErrors.name ? "border-red-500" : "border-white/20"
+                  }`}
                   required
                   disabled={isSubmitting}
                 />
@@ -260,7 +352,7 @@ const EditUserPage = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-white/80">
-                  Email
+                  Email *
                 </Label>
                 <Input
                   id="email"
@@ -268,8 +360,11 @@ const EditUserPage = () => {
                   type="email"
                   value={userData.email}
                   onChange={handleInputChange}
+                  onBlur={handleBlur}
                   placeholder="Enter email"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white ${
+                    formErrors.email ? "border-red-500" : "border-white/20"
+                  }`}
                   required
                   disabled={isSubmitting}
                 />
@@ -282,10 +377,16 @@ const EditUserPage = () => {
                 <Input
                   id="contactNumber"
                   name="contactNumber"
+                  type="text" // Changed to text for strict digit validation
                   value={userData.contactNumber}
                   onChange={handleInputChange}
-                  placeholder="Enter contact number (required for user role)"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white"
+                  onBlur={handleBlur}
+                  placeholder="Enter contact number (10 digits, required for user role)"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white ${
+                    formErrors.contactNumber
+                      ? "border-red-500"
+                      : "border-white/20"
+                  }`}
                   disabled={isSubmitting}
                 />
                 {formErrors.contactNumber && (
@@ -295,6 +396,9 @@ const EditUserPage = () => {
                 )}
               </div>
             </div>
+            {formErrors.general && (
+              <p className="text-red-400 text-sm">{formErrors.general}</p>
+            )}
             <div className="flex gap-4 justify-end">
               <Button
                 type="button"

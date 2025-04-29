@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { hasAuth } from "@/lib/hasAuth";
 import Settings from "@/models/Settings";
-import { ApiResponse, ISettings, SettingsResponseData } from "@/types";
+import {
+  ApiResponse,
+  ISettings,
+  SettingsResponseData,
+  PlainSettings,
+} from "@/types";
 import { uploadImage } from "@/lib/imageUpload";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "http://localhost:3000",
-  "Access-Control-Allow-Methods": "GET, POST, PUT",
+  "Access-Control-Allow-Methods": "GET, POST",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
@@ -15,7 +20,7 @@ export async function GET() {
   await connectDB();
 
   try {
-    const settings = (await Settings.findOne().lean()) as unknown as ISettings;
+    const settings = (await Settings.findOne().lean()) as PlainSettings | null;
     const responseData: ApiResponse<SettingsResponseData | null> = {
       error: false,
       message: settings
@@ -36,7 +41,10 @@ export async function GET() {
       headers: corsHeaders,
     });
   } catch (error) {
-    console.error("Get Settings Error:", error);
+    console.error("Get Settings Error:", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json(
       {
         error: true,
@@ -48,23 +56,10 @@ export async function GET() {
   }
 }
 
-// Define a specific type for the settings update data
 interface SettingsUpdateData {
   logo?: {
     url: string;
     createdAt: Date;
-  };
-  title?: {
-    title: string;
-    updatedAt: Date;
-  };
-  currency?: {
-    currency: string;
-    updatedAt: Date;
-  };
-  googleAnalytics?: {
-    trackingId: string;
-    updatedAt: Date;
   };
 }
 
@@ -72,6 +67,10 @@ export async function POST(req: NextRequest) {
   await connectDB();
   const { user, response } = await hasAuth(req);
   if (!user || response) {
+    console.error("Authentication failed:", {
+      user: user ? "Present" : "Missing",
+      response: response ? response.status : "No response",
+    });
     return (
       response ||
       NextResponse.json(
@@ -82,6 +81,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (user.role !== "admin") {
+    console.error("Forbidden: User is not admin:", { userRole: user.role });
     return NextResponse.json(
       {
         error: true,
@@ -97,100 +97,84 @@ export async function POST(req: NextRequest) {
 
     // Handle logo file upload
     const logoFile = formData.get("logo") as File | null;
-    if (logoFile) {
-      const validTypes = ["image/png", "image/jpeg", "image/svg+xml"];
-      const maxSize = 5 * 1024 * 1024; // 5MB
-      if (!validTypes.includes(logoFile.type)) {
-        return NextResponse.json(
-          {
-            error: true,
-            message: "Invalid file type. Allowed: PNG, JPEG, SVG",
-          } as ApiResponse,
-          { status: 400, headers: corsHeaders }
-        );
-      }
-      if (logoFile.size > maxSize) {
-        return NextResponse.json(
-          {
-            error: true,
-            message: "File too large. Max size: 5MB",
-          } as ApiResponse,
-          { status: 400, headers: corsHeaders }
-        );
-      }
-      const uploadResult = await uploadImage(logoFile);
-      updateData.logo = {
-        url: uploadResult.url,
-        createdAt: new Date(),
-      };
-    }
-
-    // Parse JSON fields
-    const jsonData = formData.get("data") as string | null;
-    if (jsonData) {
-      const parsedData = JSON.parse(jsonData);
-      if (parsedData.siteTitle) {
-        updateData.title = {
-          title: parsedData.siteTitle,
-          updatedAt: new Date(),
-        };
-      }
-      if (parsedData.currency) {
-        const sanitizedCurrency = parsedData.currency.trim().toUpperCase();
-        if (!["USD", "NPR"].includes(sanitizedCurrency)) {
-          return NextResponse.json(
-            {
-              error: true,
-              message: "Invalid currency. Must be USD or NPR",
-            } as ApiResponse,
-            { status: 400, headers: corsHeaders }
-          );
-        }
-        updateData.currency = {
-          currency: sanitizedCurrency,
-          updatedAt: new Date(),
-        };
-      }
-      if (parsedData.googleAnalytics?.trackingId) {
-        if (!/^G-[A-Z0-9]{10}$/.test(parsedData.googleAnalytics.trackingId)) {
-          return NextResponse.json(
-            {
-              error: true,
-              message: "Invalid Google Analytics tracking ID format",
-            } as ApiResponse,
-            { status: 400, headers: corsHeaders }
-          );
-        }
-        updateData.googleAnalytics = {
-          trackingId: parsedData.googleAnalytics.trackingId,
-          updatedAt: new Date(),
-        };
-      }
-    }
-
-    if (Object.keys(updateData).length === 0) {
+    if (!logoFile) {
+      console.error("No logo file provided in formData");
       return NextResponse.json(
         {
           error: true,
-          message: "No valid settings data provided",
+          message: "No logo file provided",
         } as ApiResponse,
         { status: 400, headers: corsHeaders }
       );
     }
 
-    // Check if settings document exists
-    const existingSettings = await Settings.findOne();
-    let savedSettings;
+    const validTypes = [
+      "image/png",
+      "image/jpeg",
+      "image/svg+xml",
+      "image/avif",
+    ];
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (!validTypes.includes(logoFile.type)) {
+      console.error("Invalid file type:", { fileType: logoFile.type });
+      return NextResponse.json(
+        {
+          error: true,
+          message: "Invalid file type. Allowed: PNG, JPEG, SVG, AVIF",
+        } as ApiResponse,
+        { status: 400, headers: corsHeaders }
+      );
+    }
+    if (logoFile.size > maxSize) {
+      console.error("File too large:", { fileSize: logoFile.size });
+      return NextResponse.json(
+        {
+          error: true,
+          message: "File too large. Max size: 5MB",
+        } as ApiResponse,
+        { status: 400, headers: corsHeaders }
+      );
+    }
 
+    // Check for existing settings to get the current logo's public_id
+    const existingSettings =
+      (await Settings.findOne().lean()) as PlainSettings | null;
+    let existingPublicId: string | undefined;
+    if (existingSettings?.logo?.url) {
+      const urlParts = existingSettings.logo.url.split("/");
+      const fileName = urlParts[urlParts.length - 1].split(".")[0];
+      existingPublicId = `logos/${fileName}`;
+      console.log("Existing logo found:", {
+        publicId: existingPublicId,
+        url: existingSettings.logo.url,
+      });
+    } else {
+      console.log("No existing logo found");
+    }
+
+    // Upload new logo to Cloudinary
+    console.log("Uploading logo to Cloudinary:", {
+      name: logoFile.name,
+      type: logoFile.type,
+      size: logoFile.size,
+    });
+    const uploadResult = await uploadImage(logoFile, existingPublicId);
+    updateData.logo = {
+      url: uploadResult.url,
+      createdAt: new Date(),
+    };
+
+    // Update or create settings in MongoDB
+    let savedSettings;
     if (existingSettings) {
-      // Update existing settings with a simplified approach
+      console.log("Updating existing settings with:", updateData);
       savedSettings = await Settings.findOneAndUpdate(
         {},
         { $set: updateData },
         { new: true }
       );
     } else {
-      // Create new settings
+      console.log("Creating new settings with:", updateData);
       const newSettings = new Settings(updateData);
       savedSettings = await newSettings.save();
     }
@@ -198,161 +182,31 @@ export async function POST(req: NextRequest) {
     const responseData: ApiResponse<ISettings> = {
       error: false,
       message: existingSettings
-        ? "Settings updated successfully"
-        : "Settings created successfully",
+        ? "Logo updated successfully"
+        : "Logo added successfully",
       data: savedSettings.toObject(),
     };
+
+    console.log("Logo operation successful:", {
+      message: responseData.message,
+      logoUrl: savedSettings.logo?.url,
+    });
 
     return NextResponse.json(responseData, {
       status: existingSettings ? 200 : 201,
       headers: corsHeaders,
     });
   } catch (error) {
-    console.error("Manage Settings Error:", error);
-    return NextResponse.json(
-      {
-        error: true,
-        message: "Internal server error",
-        details: error instanceof Error ? error.message : "Unknown error",
-      } as ApiResponse,
-      { status: 500, headers: corsHeaders }
-    );
-  }
-}
-
-export async function PUT(req: NextRequest) {
-  await connectDB();
-  const { user, response } = await hasAuth(req);
-  if (!user || response) {
-    return (
-      response ||
-      NextResponse.json(
-        { error: true, message: "Unauthorized" } as ApiResponse,
-        { status: 401, headers: corsHeaders }
-      )
-    );
-  }
-
-  if (user.role !== "admin") {
-    return NextResponse.json(
-      {
-        error: true,
-        message: "Forbidden: Only administrators can manage settings",
-      } as ApiResponse,
-      { status: 403, headers: corsHeaders }
-    );
-  }
-
-  try {
-    const formData = await req.formData();
-    const updateData: SettingsUpdateData = {};
-
-    // Handle logo file upload
-    const logoFile = formData.get("logo") as File | null;
-    if (logoFile) {
-      const validTypes = ["image/png", "image/jpeg", "image/svg+xml"];
-      const maxSize = 5 * 1024 * 1024; // 5MB
-      if (!validTypes.includes(logoFile.type)) {
-        return NextResponse.json(
-          {
-            error: true,
-            message: "Invalid file type. Allowed: PNG, JPEG, SVG",
-          } as ApiResponse,
-          { status: 400, headers: corsHeaders }
-        );
-      }
-      if (logoFile.size > maxSize) {
-        return NextResponse.json(
-          {
-            error: true,
-            message: "File too large. Max size: 5MB",
-          } as ApiResponse,
-          { status: 400, headers: corsHeaders }
-        );
-      }
-      const uploadResult = await uploadImage(logoFile);
-      updateData.logo = {
-        url: uploadResult.url,
-        createdAt: new Date(),
-      };
-    }
-
-    // Parse JSON fields
-    const jsonData = formData.get("data") as string | null;
-    if (jsonData) {
-      const parsedData = JSON.parse(jsonData);
-      if (parsedData.siteTitle) {
-        updateData.title = {
-          title: parsedData.siteTitle,
-          updatedAt: new Date(),
-        };
-      }
-      if (parsedData.currency) {
-        const sanitizedCurrency = parsedData.currency.trim().toUpperCase();
-        if (!["USD", "NPR"].includes(sanitizedCurrency)) {
-          return NextResponse.json(
-            {
-              error: true,
-              message: "Invalid currency. Must be USD or NPR",
-            } as ApiResponse,
-            { status: 400, headers: corsHeaders }
-          );
-        }
-        updateData.currency = {
-          currency: sanitizedCurrency,
-          updatedAt: new Date(),
-        };
-      }
-      if (parsedData.googleAnalytics?.trackingId) {
-        if (!/^G-[A-Z0-9]{10}$/.test(parsedData.googleAnalytics.trackingId)) {
-          return NextResponse.json(
-            {
-              error: true,
-              message: "Invalid Google Analytics tracking ID format",
-            } as ApiResponse,
-            { status: 400, headers: corsHeaders }
-          );
-        }
-        updateData.googleAnalytics = {
-          trackingId: parsedData.googleAnalytics.trackingId,
-          updatedAt: new Date(),
-        };
-      }
-    }
-
-    if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        {
-          error: true,
-          message: "No valid settings data provided",
-        } as ApiResponse,
-        { status: 400, headers: corsHeaders }
-      );
-    }
-
-    // Update settings with a simplified approach
-    const updatedSettings = await Settings.findOneAndUpdate(
-      {},
-      { $set: updateData },
-      { new: true, upsert: true }
-    );
-
-    const responseData: ApiResponse<ISettings> = {
-      error: false,
-      message: "Settings updated successfully",
-      data: updatedSettings.toObject(),
-    };
-
-    return NextResponse.json(responseData, {
-      status: 200,
-      headers: corsHeaders,
+    console.error("Manage Settings Error:", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
+      context: "POST /api/sitesetting/setting",
     });
-  } catch (error) {
-    console.error("Update Settings Error:", error);
     return NextResponse.json(
       {
         error: true,
-        message: "Internal server error",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
         details: error instanceof Error ? error.message : "Unknown error",
       } as ApiResponse,
       { status: 500, headers: corsHeaders }

@@ -191,12 +191,6 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Log category IDs for debugging (remove in production)
-    console.log(
-      "Sanitized Blogs Categories:",
-      sanitizedBlog.map((b) => ({ id: b.id, category: b.category }))
-    );
-
     const responseData: ApiResponse<{
       blogs: IBlog[];
       total: number;

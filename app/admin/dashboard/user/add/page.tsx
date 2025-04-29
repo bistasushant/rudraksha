@@ -16,7 +16,7 @@ const AddUserForm = () => {
   const { admin } = useAuth();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [contactNumber, setcontactNumber] = useState("");
+  const [contactNumber, setContactNumber] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -24,33 +24,160 @@ const AddUserForm = () => {
   const [selectedRole, setSelectedRole] = useState<AdminRole>("user");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // State for form errors
+  const [formErrors, setFormErrors] = useState<{
+    email: string;
+    name: string;
+    contactNumber: string;
+    password: string;
+    confirmPassword: string;
+    selectedRole: string;
+    general: string;
+  }>({
+    email: "",
+    name: "",
+    contactNumber: "",
+    password: "",
+    confirmPassword: "",
+    selectedRole: "",
+    general: "",
+  });
+
   const roles: AdminRole[] = ["admin", "editor", "user"];
+
+  // Validation function
+  const validateField = (name: string, value: any) => {
+    let error = "";
+    switch (name) {
+      case "email":
+        if (!value?.trim()) {
+          error = "Email cannot be empty.";
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+          error = "Please enter a valid email address (e.g., user@domain.com).";
+        }
+        break;
+      case "name":
+        if (!value?.trim()) {
+          error = "Name cannot be empty.";
+        } else if (value.trim().length < 3) {
+          error = "Name must be at least 3 characters long.";
+        }
+        break;
+      case "contactNumber":
+        if (!value?.trim()) {
+          error = "Phone number cannot be empty.";
+        } else if (!/^\d{10}$/.test(value.trim())) {
+          error = "Phone number must be exactly 10 digits.";
+        }
+        break;
+      case "password":
+        if (!value) {
+          error = "Password cannot be empty.";
+        } else if (value.length < 8) {
+          error = "Password must be at least 8 characters long.";
+        } else if (!/^[A-Z]/.test(value)) {
+          error = "Password must start with a capital letter.";
+        } else if (!/[0-9]/.test(value)) {
+          error = "Password must include at least one number.";
+        } else if (!/[^A-Za-z0-9]/.test(value)) {
+          error = "Password must include at least one special character.";
+        }
+        break;
+      case "confirmPassword":
+        if (!value) {
+          error = "Confirm password cannot be empty.";
+        } else if (value !== password) {
+          error = "Passwords do not match.";
+        }
+        break;
+      case "selectedRole":
+        if (!value || !roles.includes(value)) {
+          error = "Please select a valid role.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
+  };
+
+  // Handle input change with validation
+  const handleInputChange = (
+    field: string,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const { value } = e.target;
+    if (field === "email") setEmail(value);
+    if (field === "name") setName(value);
+    if (field === "contactNumber") setContactNumber(value);
+    if (field === "password") {
+      setPassword(value);
+      // Re-validate confirmPassword when password changes
+      const confirmError = validateField("confirmPassword", confirmPassword);
+      setFormErrors((prev) => ({ ...prev, confirmPassword: confirmError }));
+    }
+    if (field === "confirmPassword") setConfirmPassword(value);
+
+    // Validate on change
+    const error = validateField(field, value);
+    setFormErrors((prev) => ({ ...prev, [field]: error }));
+  };
+
+  // Handle blur with validation
+  const handleBlur = (field: string, e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    const error = validateField(field, value);
+    setFormErrors((prev) => ({ ...prev, [field]: error }));
+  };
 
   const handleRoleSelect = (role: AdminRole) => {
     setSelectedRole(role);
     setIsDropdownOpen(false);
+    const error = validateField("selectedRole", role);
+    setFormErrors((prev) => ({ ...prev, selectedRole: error }));
+  };
+
+  // Validate entire form before submission
+  const validateForm = () => {
+    const errors = {
+      email: validateField("email", email),
+      name: validateField("name", name),
+      contactNumber: validateField("contactNumber", contactNumber),
+      password: validateField("password", password),
+      confirmPassword: validateField("confirmPassword", confirmPassword),
+      selectedRole: validateField("selectedRole", selectedRole),
+      general: "",
+    };
+    setFormErrors(errors);
+
+    return !Object.values(errors).some((error) => error);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
+    if (!admin?.token) {
+      toast.error("Please log in to add users");
+      router.push("/admin");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (admin.role !== "admin") {
+      toast.error("Only admins can add users");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!validateForm()) {
+      toast.error("Please fix the form errors before submitting.");
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      if (!admin?.token) {
-        toast.error("Please log in to add users");
-        router.push("/admin");
-        return;
-      }
-
-      if (admin.role !== "admin") {
-        toast.error("Only admins can add users");
-        return;
-      }
-      if (password !== confirmPassword) {
-        toast.error("Password and confirm password must match");
-        return;
-      }
-
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: {
@@ -58,9 +185,9 @@ const AddUserForm = () => {
           Authorization: `Bearer ${admin.token}`,
         },
         body: JSON.stringify({
-          email,
-          name,
-          contactNumber,
+          email: email.trim(),
+          name: name.trim(),
+          contactNumber: contactNumber.trim(),
           password,
           confirmPassword,
           role: selectedRole,
@@ -75,9 +202,10 @@ const AddUserForm = () => {
       toast.success(data.message || "User added successfully");
       router.push("/admin/dashboard/user");
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to add user"
-      );
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to add user";
+      setFormErrors((prev) => ({ ...prev, general: errorMessage }));
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -106,10 +234,14 @@ const AddUserForm = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-2 relative">
-                <Label className="text-white/80">Select Role</Label>
+                <Label className="text-white/80">Select Role *</Label>
                 <button
                   type="button"
-                  className="flex items-center justify-between w-full bg-white/5 border-white/20 focus:ring-2 focus:ring-gray-500 text-white rounded-lg px-4 py-2"
+                  className={`flex items-center justify-between w-full bg-white/5 rounded-lg px-4 py-2 text-white ${
+                    formErrors.selectedRole
+                      ? "border-red-500"
+                      : "border-white/20"
+                  } focus:ring-2 focus:ring-gray-500`}
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                   disabled={isSubmitting}
                 >
@@ -125,6 +257,11 @@ const AddUserForm = () => {
                     }`}
                   />
                 </button>
+                {formErrors.selectedRole && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.selectedRole}
+                  </p>
+                )}
                 {isDropdownOpen && (
                   <div className="absolute z-10 mt-1 w-full bg-slate-900 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                     {roles.length > 0 ? (
@@ -153,49 +290,74 @@ const AddUserForm = () => {
                 )}
               </div>
               <div className="space-y-2">
-                <Label className="text-white/80">User Name</Label>
+                <Label className="text-white/80">User Name *</Label>
                 <Input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                  onChange={(e) => handleInputChange("name", e)}
+                  onBlur={(e) => handleBlur("name", e)}
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.name ? "border-red-500" : "border-white/20"
+                  }`}
                   placeholder="Enter user name"
                   required
                   disabled={isSubmitting}
                 />
+                {formErrors.name && (
+                  <p className="text-red-500 text-sm">{formErrors.name}</p>
+                )}
               </div>
               <div className="space-y-2">
-                <Label className="text-white/80">Email</Label>
+                <Label className="text-white/80">Email *</Label>
                 <Input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                  onChange={(e) => handleInputChange("email", e)}
+                  onBlur={(e) => handleBlur("email", e)}
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.email ? "border-red-500" : "border-white/20"
+                  }`}
                   placeholder="Enter email"
                   required
                   disabled={isSubmitting}
                 />
+                {formErrors.email && (
+                  <p className="text-red-500 text-sm">{formErrors.email}</p>
+                )}
               </div>
               <div className="space-y-2">
-                <Label className="text-white/80">Phone Number</Label>
+                <Label className="text-white/80">Phone Number *</Label>
                 <Input
-                  type="phone"
+                  type="text" // Changed to text to enforce exact digit validation
                   value={contactNumber}
-                  onChange={(e) => setcontactNumber(e.target.value)}
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
-                  placeholder="Enter phone number"
+                  onChange={(e) => handleInputChange("contactNumber", e)}
+                  onBlur={(e) => handleBlur("contactNumber", e)}
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.contactNumber
+                      ? "border-red-500"
+                      : "border-white/20"
+                  }`}
+                  placeholder="Enter phone number (10 digits)"
                   required
                   disabled={isSubmitting}
                 />
+                {formErrors.contactNumber && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.contactNumber}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
-                <Label className="text-white/80">Password</Label>
+                <Label className="text-white/80">Password *</Label>
                 <div className="relative lg:w-full">
                   <Input
                     type={showPassword ? "text" : "password"}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="bg-white/5 border border-white/10 text-white pr-10"
+                    onChange={(e) => handleInputChange("password", e)}
+                    onBlur={(e) => handleBlur("password", e)}
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white pr-10 ${
+                      formErrors.password ? "border-red-500" : "border-white/20"
+                    }`}
                     placeholder="Enter password"
                     required
                     disabled={isSubmitting}
@@ -213,15 +375,23 @@ const AddUserForm = () => {
                     )}
                   </button>
                 </div>
+                {formErrors.password && (
+                  <p className="text-red-500 text-sm">{formErrors.password}</p>
+                )}
               </div>
               <div className="space-y-2">
-                <Label className="text-white/80">Confirm Password</Label>
+                <Label className="text-white/80">Confirm Password *</Label>
                 <div className="relative lg:w-full">
                   <Input
                     type={showConfirmPassword ? "text" : "password"}
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="bg-white/5 border border-white/10 text-white pr-10"
+                    onChange={(e) => handleInputChange("confirmPassword", e)}
+                    onBlur={(e) => handleBlur("confirmPassword", e)}
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white pr-10 ${
+                      formErrors.confirmPassword
+                        ? "border-red-500"
+                        : "border-white/20"
+                    }`}
                     placeholder="Confirm password"
                     required
                     disabled={isSubmitting}
@@ -239,8 +409,16 @@ const AddUserForm = () => {
                     )}
                   </button>
                 </div>
+                {formErrors.confirmPassword && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.confirmPassword}
+                  </p>
+                )}
               </div>
             </div>
+            {formErrors.general && (
+              <p className="text-red-500 text-sm">{formErrors.general}</p>
+            )}
             <div className="flex gap-4 justify-end">
               <Button
                 type="button"

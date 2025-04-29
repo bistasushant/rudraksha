@@ -5,11 +5,19 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { Label } from "@/components/ui/label";
-
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/app/admin/providers/AuthProviders";
 import { toast } from "sonner";
 import { ICategory } from "@/types";
+
+// Function to generate slug (optional, if slug is editable)
+const generateSlug = (name: string) => {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9 -]/g, "")
+    .replace(/\s+/g, "-")
+    .trim();
+};
 
 const EditBlogCategoryForm = () => {
   const router = useRouter();
@@ -18,6 +26,15 @@ const EditBlogCategoryForm = () => {
   const [slug, setSlug] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // State for form errors
+  const [formErrors, setFormErrors] = useState<{
+    blogCategoryName: string;
+    general: string;
+  }>({
+    blogCategoryName: "",
+    general: "",
+  });
 
   const params = useParams();
   const blogCategorySlug = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -56,8 +73,7 @@ const EditBlogCategoryForm = () => {
 
         const data = await response.json();
 
-        // FIX: Access the categories array correctly
-        // It's inside data.data.categories, not just data.data
+        // Access the categories array correctly
         const blogCategories = Array.isArray(data.data?.blogCategories)
           ? data.data.blogCategories
           : [];
@@ -93,6 +109,49 @@ const EditBlogCategoryForm = () => {
     fetchCategory();
   }, [admin, blogCategorySlug, router]);
 
+  // Validation function
+  const validateField = (name: string, value: any) => {
+    let error = "";
+    switch (name) {
+      case "blogCategoryName":
+        if (!value?.trim()) {
+          error = "Blog category name cannot be empty.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
+  };
+
+  // Handle input change with validation
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    setBlogCategoryName(value);
+
+    // Validate on change
+    const error = validateField("blogCategoryName", value);
+    setFormErrors((prev) => ({ ...prev, blogCategoryName: error }));
+  };
+
+  // Handle blur with validation
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    const error = validateField("blogCategoryName", value);
+    setFormErrors((prev) => ({ ...prev, blogCategoryName: error }));
+  };
+
+  // Validate entire form before submission
+  const validateForm = () => {
+    const errors = {
+      blogCategoryName: validateField("blogCategoryName", blogCategoryName),
+      general: "",
+    };
+    setFormErrors(errors);
+
+    return !Object.values(errors).some((error) => error);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -103,19 +162,14 @@ const EditBlogCategoryForm = () => {
       return;
     }
 
-    if (!blogCategoryName.trim()) {
-      toast.error("Blog category name is required");
-      return;
-    }
-
-    if (!slug.trim()) {
-      toast.error("Slug is required");
+    if (!validateForm()) {
+      setIsSubmitting(false);
       return;
     }
 
     const payload = {
       name: blogCategoryName.trim(),
-      slug: slug.trim(),
+      slug: slug.trim() || generateSlug(blogCategoryName.trim()), // Generate slug if not editable
     };
 
     setIsSubmitting(true);
@@ -150,6 +204,13 @@ const EditBlogCategoryForm = () => {
       router.push("/admin/dashboard/blogcategory");
     } catch (error) {
       console.error("Error updating blog category:", error);
+      setFormErrors((prev) => ({
+        ...prev,
+        general:
+          error instanceof Error
+            ? error.message
+            : "Something went wrong. Please try again.",
+      }));
       toast.error(
         error instanceof Error ? error.message : "Something went wrong",
         {
@@ -160,9 +221,11 @@ const EditBlogCategoryForm = () => {
       setIsSubmitting(false);
     }
   };
+
   if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
     return null;
   }
+
   return (
     <div className="p-4 md:p-6 lg:p-8">
       <div className="flex items-center mb-4">
@@ -194,17 +257,32 @@ const EditBlogCategoryForm = () => {
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div className="grid grid-cols-1 gap-6">
                 <div className="space-y-2">
-                  <Label className="text-white/80">Blog Category Name</Label>
+                  <Label className="text-white/80">Blog Category Name *</Label>
                   <Input
-                    className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                      formErrors.blogCategoryName
+                        ? "border-red-500"
+                        : "border-white/20"
+                    }`}
                     placeholder="Enter blog category name"
                     required
                     value={blogCategoryName}
-                    onChange={(e) => setBlogCategoryName(e.target.value)}
+                    onChange={handleInputChange}
+                    onBlur={handleBlur}
                     disabled={isSubmitting}
                   />
+                  {formErrors.blogCategoryName && (
+                    <p className="text-red-500 text-sm">
+                      {formErrors.blogCategoryName}
+                    </p>
+                  )}
                 </div>
               </div>
+
+              {formErrors.general && (
+                <p className="text-red-500 text-sm">{formErrors.general}</p>
+              )}
+
               <div className="flex gap-4 justify-end">
                 <Button
                   type="button"

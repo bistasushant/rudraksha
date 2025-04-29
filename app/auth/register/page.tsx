@@ -22,52 +22,112 @@ const RegisterForm: React.FC = () => {
   });
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
-  const [errors, setErrors] = useState<Partial<RegisterFormData>>({});
+  const [errors, setErrors] = useState<{
+    name: string;
+    email: string;
+    password: string;
+    confirmPassword: string;
+    contactNumber: string;
+    general: string;
+  }>({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    contactNumber: "",
+    general: "",
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
+  // Validation function
+  const validateField = (name: string, value: any) => {
+    let error = "";
+    switch (name) {
+      case "name":
+        if (!value?.trim()) {
+          error = "Name cannot be empty.";
+        } else if (value.trim().length < 3) {
+          error = "Name must be at least 3 characters.";
+        }
+        break;
+      case "email":
+        if (!value?.trim()) {
+          error = "Email cannot be empty.";
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+          error = "Please enter a valid email address (e.g., user@domain.com).";
+        }
+        break;
+      case "password":
+        if (!value) {
+          error = "Password cannot be empty.";
+        } else if (value.length < 8) {
+          error = "Password must be at least 8 characters long.";
+        } else if (!/^[A-Z]/.test(value)) {
+          error = "Password must start with a capital letter.";
+        } else if (!/[0-9]/.test(value)) {
+          error = "Password must include at least one number.";
+        } else if (!/[^A-Za-z0-9]/.test(value)) {
+          error = "Password must include at least one special character.";
+        }
+        break;
+      case "confirmPassword":
+        if (!value) {
+          error = "Confirm password cannot be empty.";
+        } else if (value !== formData.password) {
+          error = "Passwords do not match.";
+        }
+        break;
+      case "contactNumber":
+        if (!value?.trim()) {
+          error = "Contact number cannot be empty.";
+        } else if (!/^\d{10}$/.test(value.trim())) {
+          error = "Contact number must be exactly 10 digits.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
+  };
+
+  // Validate entire form
   const validateForm = (): boolean => {
-    const newErrors: Partial<RegisterFormData> = {};
-
-    // Name validation
-    if (!formData.name.trim()) {
-      newErrors.name = "Name is required.";
-    } else if (formData.name.length < 2) {
-      newErrors.name = "Name must be at least 2 characters.";
-    }
-
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!formData.email) {
-      newErrors.email = "Email is required.";
-    } else if (!emailRegex.test(formData.email)) {
-      newErrors.email = "Invalid email format.";
-    }
-
-    // Password validation
-    if (!formData.password) {
-      newErrors.password = "Password is required.";
-    } else if (formData.password.length < 8) {
-      newErrors.password = "Password must be at least 8 characters.";
-    }
-
-    // Confirm Password validation
-    if (!formData.confirmPassword) {
-      newErrors.confirmPassword = "Confirm password is required.";
-    } else if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = "Passwords do not match.";
-    }
-
-    // Contact Number validation
-    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-    if (!formData.contactNumber) {
-      newErrors.contactNumber = "Contact number is required.";
-    } else if (!phoneRegex.test(formData.contactNumber)) {
-      newErrors.contactNumber = "Invalid phone number format.";
-    }
-
+    const newErrors = {
+      name: validateField("name", formData.name),
+      email: validateField("email", formData.email),
+      password: validateField("password", formData.password),
+      confirmPassword: validateField(
+        "confirmPassword",
+        formData.confirmPassword
+      ),
+      contactNumber: validateField("contactNumber", formData.contactNumber),
+      general: "",
+    };
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return !Object.values(newErrors).some((error) => error);
+  };
+
+  const handleInputChange = (field: keyof RegisterFormData, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+
+    // Validate on change
+    const error = validateField(field, value);
+    setErrors((prev) => ({
+      ...prev,
+      [field]: error,
+      // Re-validate confirmPassword if password changes
+      confirmPassword:
+        field === "password"
+          ? validateField("confirmPassword", formData.confirmPassword)
+          : prev.confirmPassword,
+    }));
+  };
+
+  const handleBlur = (field: keyof RegisterFormData) => {
+    const value = formData[field];
+    const error = validateField(field, value);
+    setErrors((prev) => ({ ...prev, [field]: error }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,7 +144,13 @@ const RegisterForm: React.FC = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          password: formData.password,
+          confirmPassword: formData.confirmPassword,
+          contactNumber: formData.contactNumber.trim(),
+        }),
       });
 
       const data = await response.json();
@@ -97,27 +163,36 @@ const RegisterForm: React.FC = () => {
           confirmPassword: "",
           contactNumber: "",
         });
+        setErrors({
+          name: "",
+          email: "",
+          password: "",
+          confirmPassword: "",
+          contactNumber: "",
+          general: "",
+        });
         router.push("/auth/login");
       } else {
         const errorMessage = data.message || "Registration failed.";
         if (response.status === 409) {
-          setErrors({ email: "Email already exists." });
+          setErrors((prev) => ({
+            ...prev,
+            email: "Email already exists.",
+            general: errorMessage,
+          }));
         } else {
-          toast.error(errorMessage);
+          setErrors((prev) => ({ ...prev, general: errorMessage }));
         }
+        toast.error(errorMessage);
       }
     } catch (error) {
       console.error("Error during registration:", error);
-      toast.error("An unexpected error occurred. Please try again later.");
+      const errorMessage =
+        "An unexpected error occurred. Please try again later.";
+      setErrors((prev) => ({ ...prev, general: errorMessage }));
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleInputChange = (field: keyof RegisterFormData, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: undefined }));
     }
   };
 
@@ -138,7 +213,7 @@ const RegisterForm: React.FC = () => {
               <div className="space-y-4">
                 <div>
                   <label className="block text-md font-medium text-gray-700 mb-1">
-                    Name
+                    Name *
                   </label>
                   <div className="relative">
                     <input
@@ -147,6 +222,7 @@ const RegisterForm: React.FC = () => {
                       onChange={(e) =>
                         handleInputChange("name", e.target.value)
                       }
+                      onBlur={() => handleBlur("name")}
                       className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all ${
                         errors.name ? "border-red-500" : "border-gray-200"
                       }`}
@@ -167,7 +243,7 @@ const RegisterForm: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-md font-medium text-gray-700 mb-1">
-                    Email
+                    Email *
                   </label>
                   <div className="relative">
                     <input
@@ -176,6 +252,7 @@ const RegisterForm: React.FC = () => {
                       onChange={(e) =>
                         handleInputChange("email", e.target.value)
                       }
+                      onBlur={() => handleBlur("email")}
                       className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all ${
                         errors.email ? "border-red-500" : "border-gray-200"
                       }`}
@@ -200,7 +277,7 @@ const RegisterForm: React.FC = () => {
                 <div className="grid grid-cols-1 gap-4">
                   <div className="relative">
                     <label className="block text-md font-medium text-gray-700 mb-1">
-                      Password
+                      Password *
                     </label>
                     <input
                       type={passwordVisible ? "text" : "password"}
@@ -208,6 +285,7 @@ const RegisterForm: React.FC = () => {
                       onChange={(e) =>
                         handleInputChange("password", e.target.value)
                       }
+                      onBlur={() => handleBlur("password")}
                       className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all ${
                         errors.password ? "border-red-500" : "border-gray-200"
                       }`}
@@ -230,7 +308,7 @@ const RegisterForm: React.FC = () => {
                   </div>
                   <div className="relative">
                     <label className="block text-md font-medium text-gray-700 mb-1">
-                      Confirm Password
+                      Confirm Password *
                     </label>
                     <input
                       type={confirmPasswordVisible ? "text" : "password"}
@@ -238,6 +316,7 @@ const RegisterForm: React.FC = () => {
                       onChange={(e) =>
                         handleInputChange("confirmPassword", e.target.value)
                       }
+                      onBlur={() => handleBlur("confirmPassword")}
                       className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all ${
                         errors.confirmPassword
                           ? "border-red-500"
@@ -265,21 +344,22 @@ const RegisterForm: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-md font-medium text-gray-700 mb-1">
-                    Contact Number
+                    Contact Number *
                   </label>
                   <div className="relative">
                     <input
-                      type="tel"
+                      type="text" // Changed to text for strict digit validation
                       value={formData.contactNumber}
                       onChange={(e) =>
                         handleInputChange("contactNumber", e.target.value)
                       }
+                      onBlur={() => handleBlur("contactNumber")}
                       className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all ${
                         errors.contactNumber
                           ? "border-red-500"
                           : "border-gray-200"
                       }`}
-                      placeholder="Enter your phone number (e.g., +9771234567890)"
+                      placeholder="Enter 10-digit phone number (e.g., 1234567890)"
                       disabled={isSubmitting}
                     />
                     <svg
@@ -297,6 +377,9 @@ const RegisterForm: React.FC = () => {
                   </div>
                 </div>
               </div>
+              {errors.general && (
+                <p className="text-sm text-red-600">{errors.general}</p>
+              )}
               <button
                 type="submit"
                 className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold py-3.5 rounded-lg transition-all duration-300 transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"

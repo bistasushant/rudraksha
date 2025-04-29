@@ -15,6 +15,7 @@ export interface IUser extends Document {
   createdAt?: Date;
   updatedAt?: Date;
 }
+
 export interface Customer {
   id: string;
   name: string;
@@ -36,6 +37,7 @@ export interface RegisterRequest {
   role: UserRole;
   contactNumber?: string;
 }
+
 export interface ChangeEmailRequest {
   newEmail: string;
 }
@@ -48,6 +50,7 @@ export interface ChangePasswordRequest {
 export interface ChangeImageRequest {
   newImage: string;
 }
+
 export interface CustomerApiResponse {
   customers: Customer[];
   pagination: {
@@ -57,6 +60,7 @@ export interface CustomerApiResponse {
     totalPages: number;
   };
 }
+
 export interface ApiResponse<T = any> {
   error: boolean;
   message?: string;
@@ -78,6 +82,7 @@ export interface RegisterResponseData {
   role: UserRole;
   contactNumber?: string;
 }
+
 export interface IProduct {
   id?: string;
   slug: string;
@@ -196,11 +201,26 @@ export interface IGoogleAnalytics {
   trackingId: string;
   updatedAt?: Date;
 }
+
 export interface ICurrency {
   currency: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
+
+// Plain type for lean() results
+export interface PlainSettings {
+  _id?: Types.ObjectId;
+  googleAnalytics?: IGoogleAnalytics;
+  logo?: ILogo;
+  currency?: ICurrency;
+  title?: ITitle;
+  createdAt?: Date;
+  updatedAt?: Date;
+  __v?: number;
+}
+
+// Mongoose Document type
 export interface ISettings extends Document {
   googleAnalytics?: IGoogleAnalytics;
   logo?: ILogo;
@@ -209,12 +229,14 @@ export interface ISettings extends Document {
   createdAt?: Date;
   updatedAt?: Date;
 }
+
 export interface UpdateSettingsRequest {
   googleAnalytics?: { trackingId: string };
   logo?: { url: string };
   currency?: { currency: string };
   title?: { title: string };
 }
+
 export interface SettingsResponseData {
   googleAnalytics?: IGoogleAnalytics;
   logo?: ILogo;
@@ -240,25 +262,22 @@ export interface CustomerLoginResponseData {
   email: string;
   name: string;
   image?: string;
-  contactNumber: string; // Required for customers
-  role: CustomerRole; // Role for customers will be 'customer'
+  contactNumber: string;
+  role: CustomerRole;
 }
 
-// Define the Response Data Interface for Customer Registration
 export interface CustomerRegisterResponseData {
   email: string;
   name: string;
-  contactNumber: string; // Required for customers
-  role: CustomerRole; // Always "customer"
+  contactNumber: string;
+  role: CustomerRole;
 }
 
-// Define Customer Login Request Interface
 export interface CustomerLoginRequest {
   email: string;
   password: string;
 }
 
-// Define Customer Registration Request Interface
 export interface RegisterCustomerRequest {
   email: string;
   password: string;
@@ -275,10 +294,12 @@ export interface IBlogcategory {
   createdAt?: Date;
   updatedAt?: Date;
 }
+
 export interface AddBlogCategoryRequest {
   name: string;
   slug: string;
 }
+
 export interface UpdateBlogCategoryRequest {
   name?: string;
   slug?: string;

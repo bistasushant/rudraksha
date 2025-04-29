@@ -6,10 +6,8 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, ChevronDown, Upload, X } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/app/admin/providers/AuthProviders";
-import { toast } from "sonner";
 import { ICategory, IProduct } from "@/types";
 import { Types } from "mongoose";
 import Image from "next/image";
@@ -27,24 +25,42 @@ const EditProductForm = () => {
   const [categories, setCategories] = useState<ICategory[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { admin } = useAuth();
-  const [formData, setFormData] = useState({
-    id: "",
+
+  // State for form values and errors
+  const [formValues, setFormValues] = useState({
     name: "",
-    price: 0,
-    stock: 0,
+    price: "",
+    stock: "",
     description: "",
     benefit: "",
     slug: "",
   });
+  const [formErrors, setFormErrors] = useState<{
+    name: string;
+    categories: string;
+    price: string;
+    stock: string;
+    description: string;
+    benefit: string;
+    images: string;
+    general: string;
+  }>({
+    name: "",
+    categories: "",
+    price: "",
+    stock: "",
+    description: "",
+    benefit: "",
+    images: "",
+    general: "",
+  });
 
   useEffect(() => {
     if (!admin?.token) {
-      toast.error("Please log in to edit products.");
       router.push("/admin");
       return;
     }
     if (!["admin", "editor"].includes(admin.role)) {
-      toast.error("You do not have permission to edit products.");
       router.push("/admin/dashboard/products");
     }
   }, [admin, router]);
@@ -79,16 +95,17 @@ const EditProductForm = () => {
           throw new Error("Product data not found in response");
         }
 
-        // console.log("Product data found:", productData);
-
         setProduct(productData);
         setOriginalSlug(productData.slug || "");
 
-        setFormData({
-          id: productData.id || "",
+        setFormValues({
           name: productData.name || "",
-          price: typeof productData.price === "number" ? productData.price : 0,
-          stock: typeof productData.stock === "number" ? productData.stock : 0,
+          price: String(
+            typeof productData.price === "number" ? productData.price : 0
+          ),
+          stock: String(
+            typeof productData.stock === "number" ? productData.stock : 0
+          ),
           description: productData.description || "",
           benefit: productData.benefit || "",
           slug: productData.slug || "",
@@ -99,10 +116,8 @@ const EditProductForm = () => {
           Array.isArray(productData.images) &&
           productData.images.length > 0
         ) {
-          // console.log("Setting selectedImages:", productData.images);
           setSelectedImages(productData.images);
         } else {
-          // console.log("No images found in product data");
           setSelectedImages([]);
         }
 
@@ -142,10 +157,11 @@ const EditProductForm = () => {
         setCategories(categoriesResult.data?.categories || []);
       } catch (error) {
         console.error("Error fetching data:", error);
-        toast.error(
-          error instanceof Error ? error.message : "Failed to load data.",
-          { description: "Please try again later." }
-        );
+        setFormErrors((prev) => ({
+          ...prev,
+          general:
+            error instanceof Error ? error.message : "Failed to load data.",
+        }));
       } finally {
         setLoading(false);
       }
@@ -154,12 +170,87 @@ const EditProductForm = () => {
     fetchData();
   }, [admin, routeId, router]);
 
+  const validateField = (name: string, value: any) => {
+    let error = "";
+    switch (name) {
+      case "name":
+        if (!value?.trim()) {
+          error = "Product name cannot be empty.";
+        }
+        break;
+      case "categories":
+        if (selectedCategories.length === 0) {
+          error = "At least one category must be selected.";
+        }
+        break;
+      case "price":
+        const priceValue = parseFloat(value);
+        if (!value) {
+          error = "Price cannot be empty.";
+        } else if (isNaN(priceValue) || priceValue <= 0) {
+          error = "Price must be a valid positive number.";
+        }
+        break;
+      case "stock":
+        const stockValue = parseInt(value, 10);
+        if (!value) {
+          error = "Stock quantity cannot be empty.";
+        } else if (isNaN(stockValue) || stockValue < 0) {
+          error = "Stock quantity must be a valid non-negative number.";
+        }
+        break;
+      case "description":
+        if (!value?.trim()) {
+          error = "Description cannot be empty.";
+        }
+        break;
+      case "benefit":
+        if (!value?.trim()) {
+          error = "Benefit cannot be empty.";
+        }
+        break;
+      case "images":
+        if (selectedImages.length === 0) {
+          error = "At least one image must be uploaded.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
+  };
+
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormValues((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    // Validate on change
+    const error = validateField(name, value);
+    setFormErrors((prev) => ({ ...prev, [name]: error }));
+  };
+
+  const handleBlur = (
+    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    const error = validateField(name, value);
+    setFormErrors((prev) => ({ ...prev, [name]: error }));
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
       const newImages = Array.from(files).map((file) => {
         if (file.size > 2 * 1024 * 1024) {
-          toast.error(`File ${file.name} exceeds 2MB limit.`);
+          setFormErrors((prev) => ({
+            ...prev,
+            images: `File ${file.name} exceeds 2MB limit.`,
+          }));
           return null;
         }
         const reader = new FileReader();
@@ -172,23 +263,30 @@ const EditProductForm = () => {
 
       Promise.all(newImages)
         .then((images) => {
-          setSelectedImages((prev) => [
-            ...prev,
-            ...images.filter((img): img is string => img !== null),
-          ]);
-          // console.log("Updated selectedImages after upload:", [
-          //   ...selectedImages,
-          //   ...images.filter((img): img is string => img !== null),
-          // ]);
+          const filteredImages = images.filter(
+            (img): img is string => img !== null
+          );
+          setSelectedImages((prev) => [...prev, ...filteredImages]);
+          const error = validateField(
+            "images",
+            filteredImages.length > 0 ? filteredImages : []
+          );
+          setFormErrors((prev) => ({ ...prev, images: error }));
         })
-        .catch(() => toast.error("Error processing some images."));
+        .catch(() => {
+          setFormErrors((prev) => ({
+            ...prev,
+            images: "Error processing some images.",
+          }));
+        });
     }
   };
 
   const removeImage = (index: number) => {
     setSelectedImages((prev) => {
       const updated = prev.filter((_, i) => i !== index);
-      // console.log("Images after removal:", updated);
+      const error = validateField("images", updated);
+      setFormErrors((prev) => ({ ...prev, images: error }));
       return updated;
     });
   };
@@ -199,16 +297,24 @@ const EditProductForm = () => {
         ? prev.filter((cat) => cat !== categoryId)
         : [...prev, categoryId]
     );
+    const error = validateField("categories", selectedCategories);
+    setFormErrors((prev) => ({ ...prev, categories: error }));
   };
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: name === "price" || name === "stock" ? Number(value) : value,
-    }));
+  const validateForm = () => {
+    const errors = {
+      name: validateField("name", formValues.name),
+      categories: validateField("categories", selectedCategories),
+      price: validateField("price", formValues.price),
+      stock: validateField("stock", formValues.stock),
+      description: validateField("description", formValues.description),
+      benefit: validateField("benefit", formValues.benefit),
+      images: validateField("images", selectedImages),
+      general: "",
+    };
+    setFormErrors(errors);
+
+    return !Object.values(errors).some((error) => error);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -216,14 +322,12 @@ const EditProductForm = () => {
     setIsSubmitting(true);
 
     if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
-      toast.error("You do not have permission to edit products.");
       router.push("/admin/dashboard/products");
       setIsSubmitting(false);
       return;
     }
 
-    if (selectedCategories.length === 0) {
-      toast.error("At least one category is required.");
+    if (!validateForm()) {
       setIsSubmitting(false);
       return;
     }
@@ -239,17 +343,17 @@ const EditProductForm = () => {
         images: string[];
         slug?: string;
       } = {
-        name: formData.name,
+        name: formValues.name.trim(),
         category: selectedCategories,
-        price: formData.price,
-        stock: formData.stock,
-        description: formData.description,
-        benefit: formData.benefit,
+        price: parseFloat(formValues.price),
+        stock: parseInt(formValues.stock, 10),
+        description: formValues.description.trim(),
+        benefit: formValues.benefit.trim(),
         images: selectedImages,
       };
 
-      if (formData.slug && formData.slug !== originalSlug) {
-        updateData.slug = formData.slug;
+      if (formValues.slug && formValues.slug !== originalSlug) {
+        updateData.slug = formValues.slug;
       }
 
       const updateEndpoint = originalSlug
@@ -271,19 +375,21 @@ const EditProductForm = () => {
         throw new Error(data.message || "Failed to update product");
       }
 
-      toast.success("Product updated successfully");
       router.push("/admin/dashboard/products");
     } catch (error) {
       console.error("Update error:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to update product"
-      );
+      setFormErrors((prev) => ({
+        ...prev,
+        general:
+          error instanceof Error ? error.message : "Failed to update product",
+      }));
     } finally {
       setIsSubmitting(false);
     }
   };
+
   if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
-    return null; // Render nothing while redirecting
+    return null;
   }
 
   return (
@@ -315,11 +421,13 @@ const EditProductForm = () => {
           <CardContent>
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <Label className="text-white/80">Product Images</Label>
+                <Label className="text-white/80">Product Images *</Label>
                 <div className="relative group w-full max-w-md mx-auto">
                   <label
                     htmlFor="image-upload"
-                    className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-white/30 rounded-lg cursor-pointer hover:border-purple-500 transition-colors"
+                    className={`flex flex-col items-center justify-center h-48 border-2 border-dashed rounded-lg cursor-pointer hover:border-purple-500 transition-colors ${
+                      formErrors.images ? "border-red-500" : "border-white/30"
+                    }`}
                     aria-label="Upload product images"
                   >
                     {selectedImages.length > 0 ? (
@@ -332,11 +440,6 @@ const EditProductForm = () => {
                               width={100}
                               height={100}
                               className="object-cover w-full h-full rounded-lg"
-                              // onError={() =>
-                              //   console.error(
-                              //     `Failed to load image ${index}`
-                              //   )
-                              // }
                             />
                             <button
                               type="button"
@@ -371,29 +474,43 @@ const EditProductForm = () => {
                     disabled={isSubmitting}
                     aria-hidden="true"
                   />
+                  {formErrors.images && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {formErrors.images}
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-6">
                 <div className="space-y-2">
-                  <Label className="text-white/80">Product Name</Label>
+                  <Label className="text-white/80">Product Name *</Label>
                   <Input
                     name="name"
-                    className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                      formErrors.name ? "border-red-500" : "border-white/20"
+                    }`}
                     placeholder="Enter product name"
-                    value={formData.name}
+                    value={formValues.name}
                     onChange={handleInputChange}
-                    required
+                    onBlur={handleBlur}
                     disabled={isSubmitting}
                   />
+                  {formErrors.name && (
+                    <p className="text-red-500 text-sm">{formErrors.name}</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-white/80">Categories</Label>
+                  <Label className="text-white/80">Categories *</Label>
                   <div className="relative">
                     <button
                       type="button"
-                      className="flex items-center justify-between w-full bg-white/5 border-white/20 focus:ring-2 focus:ring-gray-500 text-white rounded-lg px-4 py-2"
+                      className={`flex items-center justify-between w-full bg-white/5 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-gray-500 ${
+                        formErrors.categories
+                          ? "border-red-500 border"
+                          : "border-white/20"
+                      }`}
                       onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                       disabled={isSubmitting}
                       aria-expanded={isDropdownOpen}
@@ -466,64 +583,98 @@ const EditProductForm = () => {
                       </div>
                     )}
                   </div>
+                  {formErrors.categories && (
+                    <p className="text-red-500 text-sm">
+                      {formErrors.categories}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-white/80">Price (Rs)</Label>
+                  <Label className="text-white/80">Price (Rs) *</Label>
                   <Input
                     name="price"
                     type="number"
-                    className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                      formErrors.price ? "border-red-500" : "border-white/20"
+                    }`}
                     placeholder="0.00"
-                    value={formData.price}
+                    value={formValues.price}
                     onChange={handleInputChange}
-                    required
+                    onBlur={handleBlur}
                     min="0"
                     step="0.01"
                     disabled={isSubmitting}
                   />
+                  {formErrors.price && (
+                    <p className="text-red-500 text-sm">{formErrors.price}</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-white/80">Stock Quantity</Label>
+                  <Label className="text-white/80">Stock Quantity *</Label>
                   <Input
                     name="stock"
                     type="number"
-                    className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                      formErrors.stock ? "border-red-500" : "border-white/20"
+                    }`}
                     placeholder="Enter quantity"
-                    value={formData.stock}
+                    value={formValues.stock}
                     onChange={handleInputChange}
-                    required
+                    onBlur={handleBlur}
                     min="0"
                     disabled={isSubmitting}
                   />
+                  {formErrors.stock && (
+                    <p className="text-red-500 text-sm">{formErrors.stock}</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-white/80">Description</Label>
+                  <Label className="text-white/80">Description *</Label>
                   <Textarea
                     name="description"
-                    className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white h-32 w-full"
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white h-32 w-full ${
+                      formErrors.description
+                        ? "border-red-500"
+                        : "border-white/20"
+                    }`}
                     placeholder="Describe the product..."
-                    value={formData.description}
+                    value={formValues.description}
                     onChange={handleInputChange}
-                    required
+                    onBlur={handleBlur}
                     disabled={isSubmitting}
                   />
+                  {formErrors.description && (
+                    <p className="text-red-500 text-sm">
+                      {formErrors.description}
+                    </p>
+                  )}
                 </div>
+
                 <div className="space-y-2">
-                  <Label className="text-white/80">Benefit</Label>
+                  <Label className="text-white/80">Benefit *</Label>
                   <Textarea
                     name="benefit"
-                    className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white h-32 w-full"
-                    placeholder="Describe the product..."
-                    value={formData.benefit}
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white h-32 w-full ${
+                      formErrors.benefit ? "border-red-500" : "border-white/20"
+                    }`}
+                    placeholder="Describe the benefit..."
+                    value={formValues.benefit}
                     onChange={handleInputChange}
-                    required
+                    onBlur={handleBlur}
                     disabled={isSubmitting}
                   />
+                  {formErrors.benefit && (
+                    <p className="text-red-500 text-sm">{formErrors.benefit}</p>
+                  )}
                 </div>
               </div>
+
+              {formErrors.general && (
+                <p className="text-red-500 text-sm">{formErrors.general}</p>
+              )}
 
               <div className="flex gap-4 justify-end">
                 <Button
@@ -538,7 +689,7 @@ const EditProductForm = () => {
                 <Button
                   type="submit"
                   className="bg-purple-600 hover:bg-purple-700 text-white"
-                  disabled={isSubmitting || selectedCategories.length === 0}
+                  disabled={isSubmitting}
                 >
                   {isSubmitting ? "Updating..." : "Update Product"}
                 </Button>

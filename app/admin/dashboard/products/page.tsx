@@ -1,705 +1,635 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import {
+  Search,
+  Filter,
+  Plus,
+  ArrowUpDown,
+  ChevronDown,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ChevronDown, Upload, X } from "lucide-react";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
+import { IProduct, ICategory } from "@/types";
 import { useAuth } from "@/app/admin/providers/AuthProviders";
-import { ICategory, IProduct } from "@/types";
+import { toast } from "sonner";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { Types } from "mongoose";
-import Image from "next/image";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
-const EditProductForm = () => {
-  const router = useRouter();
-  const params = useParams();
-  const routeId = params.id as string;
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [product, setProduct] = useState<IProduct | null>(null);
-  const [originalSlug, setOriginalSlug] = useState<string>("");
+const ProductsPage = () => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filter, setFilter] = useState<
+    "All" | "In Stock" | "Out of Stock" | "On Sale"
+  >("All");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [productsData, setProductsData] = useState<IProduct[]>([]);
   const [categories, setCategories] = useState<ICategory[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [selectedProduct, setSelectedProduct] = useState<{
+    id: string;
+    slug: string;
+    name: string;
+  } | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const itemsPerPage = 10;
+  const router = useRouter();
   const { admin } = useAuth();
 
-  // State for form values and errors
-  const [formValues, setFormValues] = useState({
-    name: "",
-    price: "",
-    stock: "",
-    description: "",
-    benefit: "",
-    slug: "",
-  });
-  const [formErrors, setFormErrors] = useState<{
-    name: string;
-    categories: string;
-    price: string;
-    stock: string;
-    description: string;
-    benefit: string;
-    images: string;
-    general: string;
-  }>({
-    name: "",
-    categories: "",
-    price: "",
-    stock: "",
-    description: "",
-    benefit: "",
-    images: "",
-    general: "",
-  });
-
-  useEffect(() => {
+  const fetchProducts = useCallback(async () => {
     if (!admin?.token) {
+      toast.error("Please log in to view products.");
       router.push("/admin");
       return;
     }
-    if (!["admin", "editor"].includes(admin.role)) {
-      router.push("/admin/dashboard/products");
-    }
-  }, [admin, router]);
 
-  useEffect(() => {
-    if (!admin?.token || !["admin", "editor"].includes(admin.role)) return;
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-
-        const productResponse = await fetch(`/api/products/${routeId}`, {
+    try {
+      setLoading(true);
+      const productsResponse = await fetch(
+        `/api/products?page=${currentPage}&limit=${itemsPerPage}`,
+        {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${admin.token}`,
           },
           cache: "no-store",
-        });
-
-        if (!productResponse.ok) {
-          const errorData = await productResponse.json();
-          throw new Error(errorData.message || "Failed to fetch product");
         }
+      );
 
-        const productResult = await productResponse.json();
-        const productData =
-          productResult.data.products?.find(
-            (p: IProduct) => p.slug === routeId || p.id === routeId
-          ) || productResult.data;
-
-        if (!productData) {
-          throw new Error("Product data not found in response");
-        }
-
-        setProduct(productData);
-        setOriginalSlug(productData.slug || "");
-
-        setFormValues({
-          name: productData.name || "",
-          price: String(
-            typeof productData.price === "number" ? productData.price : 0
-          ),
-          stock: String(
-            typeof productData.stock === "number" ? productData.stock : 0
-          ),
-          description: productData.description || "",
-          benefit: productData.benefit || "",
-          slug: productData.slug || "",
-        });
-
-        // Set images array
-        if (
-          Array.isArray(productData.images) &&
-          productData.images.length > 0
-        ) {
-          setSelectedImages(productData.images);
-        } else {
-          setSelectedImages([]);
-        }
-
-        if (Array.isArray(productData.category)) {
-          const categoryIds = productData.category.map(
-            (
-              cat:
-                | string
-                | Types.ObjectId
-                | { _id?: Types.ObjectId; id?: string }
-            ) => {
-              if (typeof cat === "string") return cat;
-              if (typeof cat === "object" && cat !== null) {
-                return cat._id?.toString() || cat.id?.toString() || String(cat);
-              }
-              return String(cat);
-            }
-          );
-          setSelectedCategories(categoryIds);
-        } else if (productData.category) {
-          setSelectedCategories([productData.category.toString()]);
-        }
-
-        const categoriesResponse = await fetch("/api/category", {
-          headers: {
-            Authorization: `Bearer ${admin.token}`,
-          },
-          cache: "no-store",
-        });
-
-        if (!categoriesResponse.ok) {
-          const errorData = await categoriesResponse.json();
-          throw new Error(errorData.message || "Failed to fetch categories");
-        }
-
-        const categoriesResult = await categoriesResponse.json();
-        setCategories(categoriesResult.data?.categories || []);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setFormErrors((prev) => ({
-          ...prev,
-          general:
-            error instanceof Error ? error.message : "Failed to load data.",
-        }));
-      } finally {
-        setLoading(false);
+      if (!productsResponse.ok) {
+        const errorData = await productsResponse.json();
+        throw new Error(errorData.message || "Failed to fetch products");
       }
-    };
 
-    fetchData();
-  }, [admin, routeId, router]);
+      const productsResult = await productsResponse.json();
+      if (productsResult.error) {
+        throw new Error(productsResult.message);
+      }
 
-  const validateField = (name: string, value: any) => {
-    let error = "";
-    switch (name) {
-      case "name":
-        if (!value?.trim()) {
-          error = "Product name cannot be empty.";
+      setProductsData(productsResult.data?.products || []);
+      setCurrentPage(productsResult.data?.page || 1);
+      setTotalPages(productsResult.data?.totalPages || 1);
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to load products.",
+        {
+          description: "Please try again later.",
         }
-        break;
-      case "categories":
-        if (selectedCategories.length === 0) {
-          error = "At least one category must be selected.";
-        }
-        break;
-      case "price":
-        const priceValue = parseFloat(value);
-        if (!value) {
-          error = "Price cannot be empty.";
-        } else if (isNaN(priceValue) || priceValue <= 0) {
-          error = "Price must be a valid positive number.";
-        }
-        break;
-      case "stock":
-        const stockValue = parseInt(value, 10);
-        if (!value) {
-          error = "Stock quantity cannot be empty.";
-        } else if (isNaN(stockValue) || stockValue < 0) {
-          error = "Stock quantity must be a valid non-negative number.";
-        }
-        break;
-      case "description":
-        if (!value?.trim()) {
-          error = "Description cannot be empty.";
-        }
-        break;
-      case "benefit":
-        if (!value?.trim()) {
-          error = "Benefit cannot be empty.";
-        }
-        break;
-      case "images":
-        if (selectedImages.length === 0) {
-          error = "At least one image must be uploaded.";
-        }
-        break;
-      default:
-        break;
+      );
+    } finally {
+      setLoading(false);
     }
-    return error;
-  };
+  }, [admin, currentPage, router, itemsPerPage]);
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormValues((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-
-    // Validate on change
-    const error = validateField(name, value);
-    setFormErrors((prev) => ({ ...prev, [name]: error }));
-  };
-
-  const handleBlur = (
-    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    const error = validateField(name, value);
-    setFormErrors((prev) => ({ ...prev, [name]: error }));
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      const newImages = Array.from(files).map((file) => {
-        if (file.size > 2 * 1024 * 1024) {
-          setFormErrors((prev) => ({
-            ...prev,
-            images: `File ${file.name} exceeds 2MB limit.`,
-          }));
-          return null;
-        }
-        const reader = new FileReader();
-        return new Promise<string>((resolve, reject) => {
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      });
-
-      Promise.all(newImages)
-        .then((images) => {
-          const filteredImages = images.filter(
-            (img): img is string => img !== null
-          );
-          setSelectedImages((prev) => [...prev, ...filteredImages]);
-          const error = validateField(
-            "images",
-            filteredImages.length > 0 ? filteredImages : []
-          );
-          setFormErrors((prev) => ({ ...prev, images: error }));
-        })
-        .catch(() => {
-          setFormErrors((prev) => ({
-            ...prev,
-            images: "Error processing some images.",
-          }));
-        });
-    }
-  };
-
-  const removeImage = (index: number) => {
-    setSelectedImages((prev) => {
-      const updated = prev.filter((_, i) => i !== index);
-      const error = validateField("images", updated);
-      setFormErrors((prev) => ({ ...prev, images: error }));
-      return updated;
-    });
-  };
-
-  const handleCategoryToggle = (categoryId: string) => {
-    setSelectedCategories((prev) =>
-      prev.includes(categoryId)
-        ? prev.filter((cat) => cat !== categoryId)
-        : [...prev, categoryId]
-    );
-    const error = validateField("categories", selectedCategories);
-    setFormErrors((prev) => ({ ...prev, categories: error }));
-  };
-
-  const validateForm = () => {
-    const errors = {
-      name: validateField("name", formValues.name),
-      categories: validateField("categories", selectedCategories),
-      price: validateField("price", formValues.price),
-      stock: validateField("stock", formValues.stock),
-      description: validateField("description", formValues.description),
-      benefit: validateField("benefit", formValues.benefit),
-      images: validateField("images", selectedImages),
-      general: "",
-    };
-    setFormErrors(errors);
-
-    return !Object.values(errors).some((error) => error);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
-      router.push("/admin/dashboard/products");
-      setIsSubmitting(false);
-      return;
-    }
-
-    if (!validateForm()) {
-      setIsSubmitting(false);
+  const fetchData = useCallback(async () => {
+    if (!admin?.token) {
+      toast.error("Please log in to view products.");
+      router.push("/admin");
       return;
     }
 
     try {
-      const updateData: {
-        name: string;
-        category: string[];
-        price: number;
-        stock: number;
-        description: string;
-        benefit: string;
-        images: string[];
-        slug?: string;
-      } = {
-        name: formValues.name.trim(),
-        category: selectedCategories,
-        price: parseFloat(formValues.price),
-        stock: parseInt(formValues.stock, 10),
-        description: formValues.description.trim(),
-        benefit: formValues.benefit.trim(),
-        images: selectedImages,
-      };
+      await fetchProducts();
 
-      if (formValues.slug && formValues.slug !== originalSlug) {
-        updateData.slug = formValues.slug;
+      // Fetch categories
+      const categoriesResponse = await fetch("/api/category", {
+        headers: {
+          Authorization: `Bearer ${admin.token}`,
+        },
+        cache: "no-store",
+      });
+
+      if (!categoriesResponse.ok) {
+        const errorData = await categoriesResponse.json();
+        throw new Error(errorData.message || "Failed to fetch categories");
       }
 
-      const updateEndpoint = originalSlug
-        ? `/api/products/${originalSlug}`
-        : `/api/products/${routeId}`;
+      const categoriesResult = await categoriesResponse.json();
+      setCategories(categoriesResult.data?.categories || []);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to load data.",
+        {
+          description: "Please try again later.",
+        }
+      );
+    }
+  }, [admin, router, fetchProducts]);
 
-      const response = await fetch(updateEndpoint, {
-        method: "PATCH",
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Function to get category names by IDs
+  const getCategoryNames = (categoryIds: Types.ObjectId[] | string[]) => {
+    if (!Array.isArray(categoryIds)) {
+      return "Unknown Category";
+    }
+
+    return categoryIds
+      .map((categoryId) => {
+        const id = categoryId.toString();
+        const category = categories.find((cat) => cat.id === id);
+        return category ? category.name : "Unknown Category";
+      })
+      .join(", ");
+  };
+
+  const filteredProducts = productsData.filter((product) => {
+    const categoryNames = getCategoryNames(product.category);
+    const matchesSearch =
+      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      categoryNames.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFilter =
+      filter === "All" ||
+      (filter === "In Stock" && product.stock > 0) ||
+      (filter === "Out of Stock" && product.stock === 0) ||
+      (filter === "On Sale" && product.price < 500);
+    return matchesSearch && matchesFilter;
+  });
+
+  const sortedProducts = filteredProducts.sort((a, b) =>
+    sortOrder === "asc" ? a.price - b.price : b.price - a.price
+  );
+
+  const paginatedProducts = sortedProducts;
+
+  const handleEdit = (slug: string) => {
+    if (!admin?.role || !["admin", "editor"].includes(admin.role)) {
+      toast.error("You do not have permission to edit products.");
+      return;
+    }
+    router.push(`/admin/dashboard/products/edit/${slug}`);
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+    }
+  };
+
+  const openDeleteDialog = (product: {
+    id: string;
+    slug: string;
+    name: string;
+  }) => {
+    if (!admin?.role || admin.role !== "admin") {
+      toast.error("You do not have permission to delete products.");
+      return;
+    }
+    setSelectedProduct(product);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!selectedProduct || !admin?.token || admin.role !== "admin") {
+      toast.error("You do not have permission to delete products.");
+      setIsDeleteDialogOpen(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/products/${selectedProduct.slug}`, {
+        method: "DELETE",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${admin.token}`,
         },
-        body: JSON.stringify(updateData),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.message || "Failed to update product");
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to delete product");
       }
 
-      router.push("/admin/dashboard/products");
+      toast.success("Product deleted successfully");
+      fetchProducts();
     } catch (error) {
-      console.error("Update error:", error);
-      setFormErrors((prev) => ({
-        ...prev,
-        general:
-          error instanceof Error ? error.message : "Failed to update product",
-      }));
+      console.error("Error deleting product:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete product",
+        {
+          description: "Please try again later.",
+        }
+      );
     } finally {
-      setIsSubmitting(false);
+      setIsDeleteDialogOpen(false);
+      setSelectedProduct(null);
     }
   };
 
-  if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
-    return null;
-  }
+  const canAddProduct = admin?.role && ["admin", "editor"].includes(admin.role);
+  const canEditProduct =
+    admin?.role && ["admin", "editor"].includes(admin.role);
+  const canDeleteProduct = admin?.role === "admin";
+  const showActionsColumn = canEditProduct || canDeleteProduct;
+
+  const renderSkeletonRows = () =>
+    Array.from({ length: itemsPerPage }).map((_, index) => (
+      <TableRow key={`skeleton-${index}`} className="border-white/10">
+        <TableCell>
+          <Skeleton className="h-4 w-12 bg-white/10" />
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-8 w-8 rounded-full bg-white/10" />
+            <Skeleton className="h-4 w-32 bg-white/10" />
+          </div>
+        </TableCell>
+        <TableCell>
+          <Skeleton className="h-4 w-24 bg-white/10" />
+        </TableCell>
+        <TableCell>
+          <Skeleton className="h-4 w-48 bg-white/10" />
+        </TableCell>
+        <TableCell>
+          <Skeleton className="h-4 w-48 bg-white/10" />
+        </TableCell>
+        <TableCell>
+          <Skeleton className="h-4 w-48 bg-white/10" />
+        </TableCell>
+        <TableCell>
+          <Skeleton className="h-4 w-48 bg-white/10" />
+        </TableCell>
+        <TableCell>
+          <Skeleton className="h-4 w-48 bg-white/10" />
+        </TableCell>
+        <TableCell>
+          <Skeleton className="h-4 w-48 bg-white/10" />
+        </TableCell>
+        {showActionsColumn && (
+          <TableCell>
+            <div className="flex gap-2">
+              <Skeleton className="h-8 w-8 bg-white/10" />
+              <Skeleton className="h-8 w-8 bg-white/10" />
+            </div>
+          </TableCell>
+        )}
+      </TableRow>
+    ));
 
   return (
-    <div className="p-4 md:p-6 lg:p-8">
-      <div className="flex items-center mb-4">
-        <Button
-          type="button"
-          variant="secondary"
-          className="bg-white/10 hover:bg-white/20 text-white"
-          onClick={() => router.push("/admin/dashboard/products")}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back
-        </Button>
-      </div>
-      <h1 className="text-2xl font-bold text-white mb-4">
-        Edit Product: {product?.name || "Loading..."}
-      </h1>
-
-      {loading ? (
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+    <>
+      <div className="p-4 md:p-6 lg:p-8">
+        <div className="flex flex-col md:flex-row justify-between items-center mb-6">
+          <div className="flex items-center gap-4 w-full md:w-auto">
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-2 text-white/50" />
+              <Input
+                type="text"
+                placeholder="Search Products..."
+                className="w-full bg-white/5 border border-white/30 rounded-md pl-10 pr-4 py-2 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="flex items-center gap-2 bg-gray-400/20 border hover:bg-gray-900">
+                  <Filter size={16} />
+                  <span className="font-normal">Filter</span>
+                  <ChevronDown />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="bg-gray-900/90 text-white">
+                <DropdownMenuItem onClick={() => setFilter("All")}>
+                  All
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFilter("In Stock")}>
+                  In Stock
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFilter("Out of Stock")}>
+                  Out of Stock
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFilter("On Sale")}>
+                  On Sale
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="flex items-center gap-2 bg-gray-400/20 border hover:bg-gray-900">
+                  <span className="font-normal">Sort by Price</span>
+                  <ArrowUpDown size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="bg-gray-900/90 text-white">
+                <DropdownMenuItem onClick={() => setSortOrder("asc")}>
+                  Low to High
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortOrder("desc")}>
+                  High to Low
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          {canAddProduct && (
+            <Button
+              onClick={() => router.push("/admin/dashboard/products/add")}
+              className="flex items-center gap-2 bg-emerald-600/30 border border-emerald-500 hover:bg-emerald-600/40 mt-4 md:mt-0"
+            >
+              <Plus size={16} />
+              <span className="font-normal">Add Product</span>
+            </Button>
+          )}
         </div>
-      ) : (
-        <Card className="bg-gradient-to-br from-slate-950 to-indigo-950 border border-white/40 max-w-3xl mx-auto">
+
+        <Card className="bg-white/5 border-white/10 shadow-lg">
           <CardHeader>
-            <h2 className="text-lg font-bold text-white">Product Details</h2>
+            <CardTitle className="text-white font-semibold text-2xl">
+              Product List
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <form className="space-y-6" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <Label className="text-white/80">Product Images *</Label>
-                <div className="relative group w-full max-w-md mx-auto">
-                  <label
-                    htmlFor="image-upload"
-                    className={`flex flex-col items-center justify-center h-48 border-2 border-dashed rounded-lg cursor-pointer hover:border-purple-500 transition-colors ${
-                      formErrors.images ? "border-red-500" : "border-white/30"
-                    }`}
-                    aria-label="Upload product images"
-                  >
-                    {selectedImages.length > 0 ? (
-                      <div className="grid grid-cols-3 gap-2 w-full h-full p-2 overflow-auto">
-                        {selectedImages.map((image, index) => (
-                          <div key={index} className="relative aspect-square">
-                            <Image
-                              src={image}
-                              alt={`Preview ${index + 1}`}
-                              width={100}
-                              height={100}
-                              className="object-cover w-full h-full rounded-lg"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeImage(index)}
-                              className="absolute top-1 right-1 p-1 bg-red-500/80 rounded-full hover:bg-red-400 transition-colors"
-                              aria-label={`Remove image ${index + 1}`}
-                            >
-                              <X className="h-4 w-4 text-white" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <>
-                        <Upload className="h-12 w-12 text-white/50 mb-2 group-hover:text-purple-400" />
-                        <span className="text-white/70 group-hover:text-purple-400">
-                          Click to upload or drag and drop
-                        </span>
-                        <span className="text-sm text-white/50">
-                          PNG, JPG (max. 2MB each)
-                        </span>
-                      </>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader className="bg-white/5">
+                  <TableRow className="border-white/10 hover:bg-white/5">
+                    <TableHead className="text-white/70 text-md">
+                      Product ID
+                    </TableHead>
+                    <TableHead className="text-white/70 text-md">
+                      Product Name
+                    </TableHead>
+                    <TableHead className="text-white/70 text-md">
+                      Slug
+                    </TableHead>
+                    <TableHead className="text-white/70 text-md">
+                      Description
+                    </TableHead>
+                    <TableHead className="text-white/70 text-md">
+                      Benefit
+                    </TableHead>
+                    <TableHead className="text-white/70 text-md">
+                      Categories
+                    </TableHead>
+                    <TableHead className="text-white/70 text-md">
+                      Price
+                    </TableHead>
+                    <TableHead className="text-white/70 text-md">
+                      Stock
+                    </TableHead>
+                    <TableHead className="text-white/70 text-md">
+                      Status
+                    </TableHead>
+                    {showActionsColumn && (
+                      <TableHead className="text-white/70 text-md">
+                        Actions
+                      </TableHead>
                     )}
-                  </label>
-                  <input
-                    id="image-upload"
-                    type="file"
-                    accept="image/png, image/jpeg"
-                    className="hidden"
-                    onChange={handleImageUpload}
-                    multiple
-                    disabled={isSubmitting}
-                    aria-hidden="true"
-                  />
-                  {formErrors.images && (
-                    <p className="text-red-500 text-sm mt-1">
-                      {formErrors.images}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-white/80">Product Name *</Label>
-                  <Input
-                    name="name"
-                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
-                      formErrors.name ? "border-red-500" : "border-white/20"
-                    }`}
-                    placeholder="Enter product name"
-                    value={formValues.name}
-                    onChange={handleInputChange}
-                    onBlur={handleBlur}
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.name && (
-                    <p className="text-red-500 text-sm">{formErrors.name}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-white/80">Categories *</Label>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      className={`flex items-center justify-between w-full bg-white/5 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-gray-500 ${
-                        formErrors.categories
-                          ? "border-red-500 border"
-                          : "border-white/20"
-                      }`}
-                      onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                      disabled={isSubmitting}
-                      aria-expanded={isDropdownOpen}
-                      aria-controls="category-dropdown"
-                    >
-                      <div className="flex flex-wrap gap-2">
-                        {selectedCategories.length > 0 ? (
-                          selectedCategories.map((categoryId) => {
-                            const category = categories.find(
-                              (cat) => cat.id === categoryId
-                            );
-                            return (
-                              <span
-                                key={categoryId}
-                                className="bg-purple-600 text-white text-sm px-2 py-1 rounded flex items-center"
-                              >
-                                {category ? category.name : "Unknown"}
-                                <span
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleCategoryToggle(categoryId);
-                                  }}
-                                  className="ml-1 text-white/80 hover:text-white cursor-pointer"
-                                  aria-label={`Remove ${category?.name}`}
-                                >
-                                  <X className="h-4 w-4" />
-                                </span>
-                              </span>
-                            );
-                          })
-                        ) : (
-                          <span className="text-white/50">
-                            Select categories
-                          </span>
-                        )}
-                      </div>
-                      <ChevronDown
-                        className={`h-5 w-5 text-white/50 transition-transform ${
-                          isDropdownOpen ? "rotate-180" : ""
-                        }`}
-                      />
-                    </button>
-                    {isDropdownOpen && (
-                      <div
-                        id="category-dropdown"
-                        className="absolute z-10 mt-1 w-full bg-slate-900 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto"
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    renderSkeletonRows()
+                  ) : paginatedProducts.length > 0 ? (
+                    paginatedProducts.map((product, index) => (
+                      <TableRow
+                        key={product.id}
+                        className="border-white/10 hover:bg-white/5"
                       >
-                        {categories.map((category) => (
-                          <div
-                            key={category.id}
-                            className={`px-4 py-2 cursor-pointer hover:bg-white/10 text-white hover:text-white flex items-center justify-between ${
-                              selectedCategories.includes(category.id ?? "")
-                                ? "bg-purple-600/70"
-                                : ""
-                            }`}
-                            onClick={() =>
-                              handleCategoryToggle(category.id ?? "")
-                            }
-                            role="option"
-                            aria-selected={selectedCategories.includes(
-                              category.id ?? ""
-                            )}
-                          >
-                            <span>{category.name}</span>
-                            {selectedCategories.includes(category.id ?? "") && (
-                              <span className="text-green-400">✓</span>
-                            )}
+                        <TableCell className="text-white/70 text-md">
+                          {(currentPage - 1) * itemsPerPage + index + 1}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="flex gap-2">
+                              {product.images?.map((imgUrl, imgIndex) => (
+                                <Avatar key={imgIndex} className="h-8 w-8">
+                                  <AvatarImage
+                                    src={imgUrl}
+                                    alt={`Product Image ${imgIndex + 1}`}
+                                  />
+                                  <AvatarFallback className="bg-purple-600">
+                                    P
+                                  </AvatarFallback>
+                                </Avatar>
+                              ))}
+                              {(!product.images ||
+                                product.images.length === 0) && (
+                                <Avatar className="h-8 w-8">
+                                  <AvatarImage
+                                    src="/images/placeholder.png"
+                                    alt="Product Image"
+                                  />
+                                  <AvatarFallback className="bg-purple-600">
+                                    P
+                                  </AvatarFallback>
+                                </Avatar>
+                              )}
+                            </div>
+                            <span className="text-white/70 text-md">
+                              {product.name}
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {formErrors.categories && (
-                    <p className="text-red-500 text-sm">
-                      {formErrors.categories}
-                    </p>
+                        </TableCell>
+                        <TableCell className="text-white/70 text-md">
+                          {product.slug}
+                        </TableCell>
+                        <TableCell className="text-white/70 text-md">
+                          {product.description.length > 20
+                            ? `${product.description.substring(0, 20)}...`
+                            : product.description}
+                        </TableCell>
+                        <TableCell className="text-white/70 text-md">
+                          {product.benefit.length > 20
+                            ? `${product.benefit.substring(0, 20)}...`
+                            : product.benefit}
+                        </TableCell>
+                        <TableCell className="text-white/70 text-md">
+                          {getCategoryNames(product.category)}
+                        </TableCell>
+                        <TableCell className="text-white/70 text-md">
+                          Rs {product.price.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-white/70 text-md">
+                          {product.stock}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={`${
+                              product.stock > 0
+                                ? "bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                                : "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                            }`}
+                          >
+                            {product.stock > 0 ? "Available" : "Out of Stock"}
+                          </Badge>
+                        </TableCell>
+                        {showActionsColumn && (
+                          <TableCell>
+                            <div className="flex gap-2">
+                              {canEditProduct && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="hover:bg-gray-400/20"
+                                  onClick={() =>
+                                    product.slug && handleEdit(product.slug)
+                                  }
+                                >
+                                  <span className="text-blue-500">
+                                    <Pencil />
+                                  </span>
+                                </Button>
+                              )}
+                              {canDeleteProduct && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="hover:bg-gray-400/20"
+                                  onClick={() =>
+                                    product.id &&
+                                    product.slug &&
+                                    openDeleteDialog({
+                                      id: product.id,
+                                      slug: product.slug,
+                                      name: product.name,
+                                    })
+                                  }
+                                >
+                                  <span className="text-red-500">
+                                    <Trash2 />
+                                  </span>
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={showActionsColumn ? 10 : 9}
+                        className="text-center text-white/70"
+                      >
+                        No products found.
+                      </TableCell>
+                    </TableRow>
                   )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-white/80">Price (Rs) *</Label>
-                  <Input
-                    name="price"
-                    type="number"
-                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
-                      formErrors.price ? "border-red-500" : "border-white/20"
-                    }`}
-                    placeholder="0.00"
-                    value={formValues.price}
-                    onChange={handleInputChange}
-                    onBlur={handleBlur}
-                    min="0"
-                    step="0.01"
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.price && (
-                    <p className="text-red-500 text-sm">{formErrors.price}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-white/80">Stock Quantity *</Label>
-                  <Input
-                    name="stock"
-                    type="number"
-                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
-                      formErrors.stock ? "border-red-500" : "border-white/20"
-                    }`}
-                    placeholder="Enter quantity"
-                    value={formValues.stock}
-                    onChange={handleInputChange}
-                    onBlur={handleBlur}
-                    min="0"
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.stock && (
-                    <p className="text-red-500 text-sm">{formErrors.stock}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-white/80">Description *</Label>
-                  <Textarea
-                    name="description"
-                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white h-32 w-full ${
-                      formErrors.description
-                        ? "border-red-500"
-                        : "border-white/20"
-                    }`}
-                    placeholder="Describe the product..."
-                    value={formValues.description}
-                    onChange={handleInputChange}
-                    onBlur={handleBlur}
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.description && (
-                    <p className="text-red-500 text-sm">
-                      {formErrors.description}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-white/80">Benefit *</Label>
-                  <Textarea
-                    name="benefit"
-                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white h-32 w-full ${
-                      formErrors.benefit ? "border-red-500" : "border-white/20"
-                    }`}
-                    placeholder="Describe the benefit..."
-                    value={formValues.benefit}
-                    onChange={handleInputChange}
-                    onBlur={handleBlur}
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.benefit && (
-                    <p className="text-red-500 text-sm">{formErrors.benefit}</p>
-                  )}
-                </div>
-              </div>
-
-              {formErrors.general && (
-                <p className="text-red-500 text-sm">{formErrors.general}</p>
-              )}
-
-              <div className="flex gap-4 justify-end">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="bg-white/10 hover:bg-white/20 text-white"
-                  onClick={() => router.back()}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  className="bg-purple-600 hover:bg-purple-700 text-white"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? "Updating..." : "Update Product"}
-                </Button>
-              </div>
-            </form>
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
-      )}
-    </div>
+
+        {totalPages > 1 && (
+          <Pagination className="mt-3">
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  href="#"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  className={`text-white/60 hover:bg-gray-500/20 hover:text-white/80 ${
+                    currentPage === 1 ? "pointer-events-none opacity-50" : ""
+                  }`}
+                />
+              </PaginationItem>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                (page) => (
+                  <PaginationItem key={page}>
+                    <PaginationLink
+                      href="#"
+                      onClick={() => handlePageChange(page)}
+                      isActive={currentPage === page}
+                      className={`text-white/60 hover:bg-gray-500/20 hover:text-white/80 ${
+                        currentPage === page
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : ""
+                      }`}
+                    >
+                      {page}
+                    </PaginationLink>
+                  </PaginationItem>
+                )
+              )}
+              <PaginationItem>
+                <PaginationNext
+                  href="#"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  className={`text-white/60 hover:bg-gray-500/20 hover:text-white/80 ${
+                    currentPage === totalPages
+                      ? "pointer-events-none opacity-50"
+                      : ""
+                  }`}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        )}
+      </div>
+
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
+        <AlertDialogContent className="bg-gray-900 border border-gray-700 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">
+              Delete Product
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-white/70">
+              Are you sure you want to delete this product{" "}
+              <strong>{selectedProduct?.name || "this product"}</strong>?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-gray-700 hover:bg-gray-600 text-white border-none">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700 text-white border-none"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };
 
-export default EditProductForm;
+export default ProductsPage;

@@ -19,9 +19,7 @@ export default function LogoPage() {
 
   useEffect(() => {
     const fetchLogo = async () => {
-      if (!admin?.token) {
-        return; // Wait for auth to initialize
-      }
+      if (!admin?.token) return;
 
       setIsLoading(true);
       try {
@@ -44,20 +42,26 @@ export default function LogoPage() {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
+          console.error("Fetch Logo Error Response:", {
+            status: response.status,
+            statusText: response.statusText,
+            errorData,
+          });
           throw new Error(errorData.message || `Error: ${response.status}`);
         }
 
         const result = await response.json();
-
+        console.log("Fetch Logo Result:", result);
         if (!result.error && result.data?.logo?.url) {
           setLogo(result.data.logo.url);
-        } else if (result.data === null || !result.data?.logo?.url) {
-          setLogo(null);
         } else {
-          throw new Error(result.message || "Failed to fetch logo");
+          setLogo(null);
         }
       } catch (error) {
-        console.error("Error fetching logo:", error);
+        console.error("Error fetching logo:", {
+          message: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined,
+        });
         toast.error("Failed to load logo", {
           description:
             error instanceof Error ? error.message : "Please try again later",
@@ -67,16 +71,11 @@ export default function LogoPage() {
       }
     };
 
-    if (admin) {
-      fetchLogo();
-    }
+    if (admin) fetchLogo();
   }, [admin, router]);
 
-  // Redirect if not authenticated or not admin
   useEffect(() => {
-    if (admin === null) {
-      return; // Still loading auth
-    }
+    if (admin === null) return;
 
     if (!admin?.token) {
       toast.error("Please log in to access this page");
@@ -96,12 +95,17 @@ export default function LogoPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const validTypes = ["image/png", "image/jpeg", "image/svg+xml"];
+    const validTypes = [
+      "image/png",
+      "image/jpeg",
+      "image/svg+xml",
+      "image/avif",
+    ];
     const maxSize = 5 * 1024 * 1024; // 5MB
 
     if (!validTypes.includes(file.type)) {
       toast.error("Invalid file type", {
-        description: "Please upload a PNG, JPEG, or SVG image.",
+        description: "Please upload a PNG, JPEG, SVG, or AVIF image.",
       });
       return;
     }
@@ -113,15 +117,22 @@ export default function LogoPage() {
       return;
     }
 
+    // Warn about potential format mismatch
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    const expectedExtensions = ["png", "jpg", "jpeg", "svg", "avif"];
+    if (extension && !expectedExtensions.includes(extension)) {
+      toast.warning("File extension mismatch", {
+        description: `The file extension (.${extension}) does not match the expected formats (PNG, JPEG, SVG, AVIF). Ensure the file content matches its extension.`,
+      });
+    }
+
     const previewUrl = URL.createObjectURL(file);
     setPreview(previewUrl);
   };
 
   const clearPreview = () => {
     setPreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSave = async () => {
@@ -169,7 +180,11 @@ export default function LogoPage() {
         cache: "no-store",
       });
 
-      console.log("POST response status:", response.status);
+      console.log("POST response:", {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+      });
 
       if (response.status === 401) {
         toast.error("Session expired", {
@@ -180,8 +195,27 @@ export default function LogoPage() {
       }
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Error: ${response.status}`);
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (jsonError) {
+          console.error("Failed to parse error response:", {
+            message:
+              jsonError instanceof Error ? jsonError.message : "Unknown error",
+            status: response.status,
+            statusText: response.statusText,
+          });
+          errorData = {};
+        }
+        console.error("API Error Response:", {
+          status: response.status,
+          statusText: response.statusText,
+          errorData,
+        });
+        throw new Error(
+          errorData.message ||
+            `Error: ${response.status} ${response.statusText}`
+        );
       }
 
       const result = await response.json();
@@ -190,17 +224,24 @@ export default function LogoPage() {
       if (!result.error && result.data?.logo?.url) {
         setLogo(result.data.logo.url);
         clearPreview();
-        toast.success("Logo updated", {
-          description: "Your site logo has been updated successfully.",
+        toast.success(result.message, {
+          description: "Your site logo has been saved successfully.",
         });
       } else {
-        throw new Error(result.message || "Failed to upload logo");
+        throw new Error(result.message || "Failed to save logo");
       }
     } catch (error) {
-      console.error("Error uploading logo:", error);
+      console.error("Error uploading logo:", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       toast.error("Upload failed", {
         description:
-          error instanceof Error ? error.message : "Please try again later.",
+          error instanceof Error
+            ? error.message.includes("avif")
+              ? "The uploaded file is in AVIF format but may be misnamed (e.g., as .png). Please ensure the file extension matches its content."
+              : error.message
+            : "Please try again later.",
       });
     } finally {
       setIsUploading(false);
@@ -257,7 +298,7 @@ export default function LogoPage() {
                 <div className="flex items-center gap-4">
                   <Input
                     type="file"
-                    accept="image/png,image/jpeg,image/svg+xml"
+                    accept="image/png,image/jpeg,image/svg+xml,image/avif"
                     onChange={handleFileChange}
                     ref={fileInputRef}
                     className="bg-slate-800 border-white/10 text-white text-md file:text-purple-400 file:mr-4 file:py-1 file:px-4 file:rounded-md file:border-0 file:text-md file:bg-purple-500/20 file:hover:bg-purple-500/30"
@@ -274,7 +315,8 @@ export default function LogoPage() {
                   )}
                 </div>
                 <p className="text-xs text-white/50 mt-2">
-                  Accepted formats: PNG, JPEG, SVG. Maximum size: 5MB.
+                  Accepted formats: PNG, JPEG, SVG, AVIF. Maximum size: 5MB.
+                  Ensure the file extension matches the actual file format.
                 </p>
               </div>
 

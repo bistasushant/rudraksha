@@ -9,7 +9,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import Image from "next/image";
 import { useAuth } from "@/app/admin/providers/AuthProviders";
-import { toast } from "sonner";
 import { ICategory } from "@/types";
 
 // Utility to generate slug from product name
@@ -50,14 +49,40 @@ const AddProductForm = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 1000);
 
+  // State for form values and errors
+  const [formValues, setFormValues] = useState({
+    productName: "",
+    price: "",
+    stockQuantity: "",
+    description: "",
+    benefit: "",
+  });
+  const [formErrors, setFormErrors] = useState<{
+    productName: string;
+    categories: string;
+    price: string;
+    stockQuantity: string;
+    description: string;
+    benefit: string;
+    images: string;
+    general: string; // Added general property
+  }>({
+    productName: "",
+    categories: "",
+    price: "",
+    stockQuantity: "",
+    description: "",
+    benefit: "",
+    images: "",
+    general: "", // Initialize general property
+  });
+
   useEffect(() => {
     if (!admin?.token) {
-      toast.error("Please log in to add products.");
       router.push("/admin");
       return;
     }
     if (!["admin", "editor"].includes(admin.role)) {
-      toast.error("You do not have permission to add products.");
       router.push("/admin/dashboard/products");
     }
   }, [admin, router]);
@@ -85,10 +110,10 @@ const AddProductForm = () => {
         setCategories(categoriesData);
       } catch (error) {
         console.error("Error fetching categories:", error);
-        toast.error(
-          error instanceof Error ? error.message : "Failed to load categories.",
-          { description: "Please try again later." }
-        );
+        setFormErrors((prev) => ({
+          ...prev,
+          categories: "Failed to load categories. Please try again later.",
+        }));
       } finally {
         setLoadingCategories(false);
       }
@@ -96,12 +121,84 @@ const AddProductForm = () => {
     fetchCategories();
   }, [admin, router]);
 
+  const validateField = (name: string, value: any) => {
+    let error = "";
+    switch (name) {
+      case "productName":
+        if (!value?.trim()) {
+          error = "Product name cannot be empty.";
+        }
+        break;
+      case "categories":
+        if (selectedCategories.length === 0) {
+          error = "At least one category must be selected.";
+        }
+        break;
+      case "price":
+        const priceValue = parseFloat(value);
+        if (!value) {
+          error = "Price cannot be empty.";
+        } else if (isNaN(priceValue) || priceValue <= 0) {
+          error = "Price must be a valid positive number.";
+        }
+        break;
+      case "stockQuantity":
+        const stockValue = parseInt(value, 10);
+        if (!value) {
+          error = "Stock quantity cannot be empty.";
+        } else if (isNaN(stockValue) || stockValue < 0) {
+          error = "Stock quantity must be a valid non-negative number.";
+        }
+        break;
+      case "description":
+        if (!value?.trim()) {
+          error = "Description cannot be empty.";
+        }
+        break;
+      case "benefit":
+        if (!value?.trim()) {
+          error = "Benefit cannot be empty.";
+        }
+        break;
+      case "images":
+        if (selectedImages.length === 0) {
+          error = "At least one image must be uploaded.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
+  };
+
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormValues((prev) => ({ ...prev, [name]: value }));
+
+    // Validate on change
+    const error = validateField(name, value);
+    setFormErrors((prev) => ({ ...prev, [name]: error }));
+  };
+
+  const handleBlur = (
+    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    const error = validateField(name, value);
+    setFormErrors((prev) => ({ ...prev, [name]: error }));
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
       const newImages = Array.from(files).map((file) => {
         if (file.size > 2 * 1024 * 1024) {
-          toast.error("File size exceeds 2MB limit.");
+          setFormErrors((prev) => ({
+            ...prev,
+            images: "File size exceeds 2MB limit.",
+          }));
           return null;
         }
         const reader = new FileReader();
@@ -116,12 +213,20 @@ const AddProductForm = () => {
 
       Promise.all(newImages)
         .then((images) => {
-          setSelectedImages((prev) => [
-            ...prev,
-            ...(images.filter(Boolean) as string[]),
-          ]);
+          const filteredImages = images.filter(Boolean) as string[];
+          setSelectedImages((prev) => [...prev, ...filteredImages]);
+          const error = validateField(
+            "images",
+            filteredImages.length > 0 ? filteredImages : []
+          );
+          setFormErrors((prev) => ({ ...prev, images: error }));
         })
-        .catch(() => toast.error("Error uploading images."));
+        .catch(() => {
+          setFormErrors((prev) => ({
+            ...prev,
+            images: "Error uploading images.",
+          }));
+        });
     }
   };
 
@@ -131,14 +236,50 @@ const AddProductForm = () => {
         ? prev.filter((cat) => cat !== categoryId)
         : [...prev, categoryId]
     );
+    const error = validateField("categories", selectedCategories);
+    setFormErrors((prev) => ({ ...prev, categories: error }));
   };
 
   const resetForm = (form: HTMLFormElement) => {
     form.reset();
+    setFormValues({
+      productName: "",
+      price: "",
+      stockQuantity: "",
+      description: "",
+      benefit: "",
+    });
+    setFormErrors({
+      productName: "",
+      categories: "",
+      price: "",
+      stockQuantity: "",
+      description: "",
+      benefit: "",
+      images: "",
+      general: "", // Reset general error
+    });
     setSelectedImages([]);
     setSelectedCategories([]);
     setIsDropdownOpen(false);
     setSearchTerm("");
+  };
+
+  const validateForm = () => {
+    const errors = {
+      productName: validateField("productName", formValues.productName),
+      categories: validateField("categories", selectedCategories),
+      price: validateField("price", formValues.price),
+      stockQuantity: validateField("stockQuantity", formValues.stockQuantity),
+      description: validateField("description", formValues.description),
+      benefit: validateField("benefit", formValues.benefit),
+      images: validateField("images", selectedImages),
+      general: "", // Reset general error on validation
+    };
+    setFormErrors(errors);
+
+    // Return true if there are no errors
+    return !Object.values(errors).some((error) => error);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -147,58 +288,25 @@ const AddProductForm = () => {
     setIsSubmitting(true);
 
     if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
-      toast.error("You do not have permission to add products.");
       router.push("/admin/dashboard/products");
       setIsSubmitting(false);
       return;
     }
 
-    const formData = new FormData(form);
-    const productName = formData.get("productName") as string;
-    const price = parseFloat(formData.get("price") as string);
-    const stock = parseInt(formData.get("stockQuantity") as string, 10);
-    const description = formData.get("description") as string;
-    const benefit = formData.get("benefit") as string;
-
-    if (!productName?.trim()) {
-      toast.error("Product name is required.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (selectedCategories.length === 0) {
-      toast.error("At least one category must be selected.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (isNaN(price) || price <= 0) {
-      toast.error("Price must be a valid positive number.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (isNaN(stock) || stock < 0) {
-      toast.error("Stock quantity must be a valid non-negative number.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (!description?.trim()) {
-      toast.error("Description is required.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (!benefit?.trim()) {
-      toast.error("Benefit is required.");
+    // Validate all fields
+    if (!validateForm()) {
       setIsSubmitting(false);
       return;
     }
 
     const data = {
-      name: productName.trim(),
-      slug: generateSlug(productName.trim()),
+      name: formValues.productName.trim(),
+      slug: generateSlug(formValues.productName.trim()),
       category: selectedCategories,
-      price,
-      stock,
-      description: description.trim(),
-      benefit: benefit.trim(),
+      price: parseFloat(formValues.price),
+      stock: parseInt(formValues.stockQuantity, 10),
+      description: formValues.description.trim(),
+      benefit: formValues.benefit.trim(),
       images: selectedImages,
     };
 
@@ -218,16 +326,17 @@ const AddProductForm = () => {
         throw new Error(result.message || "Failed to add product.");
       }
 
-      toast.success("Product added successfully!");
       resetForm(form);
       router.push("/admin/dashboard/products");
     } catch (error) {
       console.error("Add Product Error:", error);
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "An error occurred while adding the product."
-      );
+      setFormErrors((prev) => ({
+        ...prev,
+        general:
+          error instanceof Error
+            ? error.message
+            : "An error occurred while adding the product.",
+      }));
     } finally {
       setIsSubmitting(false);
     }
@@ -266,11 +375,13 @@ const AddProductForm = () => {
         <CardContent>
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div className="space-y-2">
-              <Label className="text-white/80">Product Image</Label>
+              <Label className="text-white/80">Product Image *</Label>
               <div className="relative group w-full max-w-md mx-auto">
                 <label
                   htmlFor="image-upload"
-                  className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-white/30 rounded-lg cursor-pointer hover:border-purple-500 transition-colors"
+                  className={`flex flex-col items-center justify-center h-48 border-2 border-dashed rounded-lg cursor-pointer hover:border-purple-500 transition-colors ${
+                    formErrors.images ? "border-red-500" : "border-white/30"
+                  }`}
                 >
                   {selectedImages.length > 0 ? (
                     <div className="w-full p-2 grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
@@ -318,27 +429,47 @@ const AddProductForm = () => {
                   multiple
                   disabled={isSubmitting}
                 />
+                {formErrors.images && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {formErrors.images}
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-2">
-                <Label className="text-white/80">Product Name</Label>
+                <Label className="text-white/80">Product Name *</Label>
                 <Input
                   name="productName"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.productName
+                      ? "border-red-500"
+                      : "border-white/20"
+                  }`}
                   placeholder="Enter product name"
-                  required
+                  value={formValues.productName}
+                  onChange={handleInputChange}
+                  onBlur={handleBlur}
                   disabled={isSubmitting}
                 />
+                {formErrors.productName && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.productName}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label className="text-white/80">Categories</Label>
+                <Label className="text-white/80">Categories *</Label>
                 <div className="relative">
                   <button
                     type="button"
-                    className="flex items-center justify-between w-full bg-white/5 border-white/20 focus:ring-2 focus:ring-gray-500 text-white rounded-lg px-4 py-2"
+                    className={`flex items-center justify-between w-full bg-white/5 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-gray-500 ${
+                      formErrors.categories
+                        ? "border-red-500 border"
+                        : "border-white/20"
+                    }`}
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                     disabled={isSubmitting}
                   >
@@ -383,7 +514,7 @@ const AddProductForm = () => {
                           onChange={(e) => setSearchTerm(e.target.value)}
                           className="bg-white/5 border-white/20 text-white w-full"
                           disabled={isSubmitting}
-                          onClick={(e) => e.stopPropagation()} // Prevent dropdown from closing
+                          onClick={(e) => e.stopPropagation()}
                         />
                       </div>
                       {loadingCategories ? (
@@ -417,57 +548,102 @@ const AddProductForm = () => {
                     </div>
                   )}
                 </div>
+                {formErrors.categories && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.categories}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label className="text-white/80">Price (Rs)</Label>
+                <Label className="text-white/80">Price (Rs) *</Label>
                 <Input
                   name="price"
                   type="number"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.price ? "border-red-500" : "border-white/20"
+                  }`}
                   placeholder="0.00"
-                  required
+                  value={formValues.price}
+                  onChange={handleInputChange}
+                  onBlur={handleBlur}
                   min="0"
                   step="0.01"
                   disabled={isSubmitting}
                 />
+                {formErrors.price && (
+                  <p className="text-red-500 text-sm">{formErrors.price}</p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label className="text-white/80">Stock Quantity</Label>
+                <Label className="text-white/80">Stock Quantity *</Label>
                 <Input
                   name="stockQuantity"
                   type="number"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.stockQuantity
+                      ? "border-red-500"
+                      : "border-white/20"
+                  }`}
                   placeholder="Enter quantity"
-                  required
+                  value={formValues.stockQuantity}
+                  onChange={handleInputChange}
+                  onBlur={handleBlur}
                   min="0"
                   disabled={isSubmitting}
                 />
+                {formErrors.stockQuantity && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.stockQuantity}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label className="text-white/80">Description</Label>
+                <Label className="text-white/80">Description *</Label>
                 <Textarea
                   name="description"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white h-32 w-full"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white h-32 w-full ${
+                    formErrors.description
+                      ? "border-red-500"
+                      : "border-white/20"
+                  }`}
                   placeholder="Describe the product..."
-                  required
+                  value={formValues.description}
+                  onChange={handleInputChange}
+                  onBlur={handleBlur}
                   disabled={isSubmitting}
                 />
+                {formErrors.description && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.description}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label className="text-white/80">Benefit</Label>
+                <Label className="text-white/80">Benefit *</Label>
                 <Textarea
                   name="benefit"
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white h-32 w-full"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white h-32 w-full ${
+                    formErrors.benefit ? "border-red-500" : "border-white/20"
+                  }`}
                   placeholder="Describe the benefit..."
-                  required
+                  value={formValues.benefit}
+                  onChange={handleInputChange}
+                  onBlur={handleBlur}
                   disabled={isSubmitting}
                 />
+                {formErrors.benefit && (
+                  <p className="text-red-500 text-sm">{formErrors.benefit}</p>
+                )}
               </div>
             </div>
+
+            {formErrors.general && (
+              <p className="text-red-500 text-sm">{formErrors.general}</p>
+            )}
 
             <div className="flex gap-4 justify-end">
               <Button
@@ -482,7 +658,7 @@ const AddProductForm = () => {
               <Button
                 type="submit"
                 className="bg-purple-600 hover:bg-purple-700 text-white"
-                disabled={isSubmitting || selectedCategories.length === 0}
+                disabled={isSubmitting}
               >
                 {isSubmitting ? "Adding..." : "Add Product"}
               </Button>

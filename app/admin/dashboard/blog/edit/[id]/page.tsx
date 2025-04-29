@@ -30,6 +30,21 @@ const EditBlogForm = () => {
     image: "",
   });
 
+  // State for form errors
+  const [formErrors, setFormErrors] = useState<{
+    name: string;
+    heading: string;
+    description: string;
+    image: string;
+    general: string;
+  }>({
+    name: "",
+    heading: "",
+    description: "",
+    image: "",
+    general: "",
+  });
+
   // RBAC Check: Redirect users without edit permission
   useEffect(() => {
     if (!admin?.token) {
@@ -85,6 +100,15 @@ const EditBlogForm = () => {
           slug: blogData.slug || "",
           image: blogData.image || "",
         });
+
+        // Validate initial form data
+        setFormErrors({
+          name: validateField("name", blogData.name || ""),
+          heading: validateField("heading", blogData.heading || ""),
+          description: validateField("description", blogData.description || ""),
+          image: validateField("image", blogData.image || ""),
+          general: "",
+        });
       } catch (error) {
         console.error("Error fetching data:", error);
         toast.error(
@@ -100,19 +124,62 @@ const EditBlogForm = () => {
     fetchData();
   }, [admin, routeId, router]);
 
+  // Validation function
+  const validateField = (name: string, value: any) => {
+    let error = "";
+    switch (name) {
+      case "name":
+        if (!value?.trim()) {
+          error = "Blog name cannot be empty.";
+        } else if (value.trim().length < 3) {
+          error = "Blog name must be at least 3 characters long.";
+        }
+        break;
+      case "heading":
+        if (!value?.trim()) {
+          error = "Blog heading cannot be empty.";
+        } else if (value.trim().length < 3) {
+          error = "Blog heading must be at least 3 characters long.";
+        }
+        break;
+      case "description":
+        if (!value?.trim()) {
+          error = "Blog description cannot be empty.";
+        } else if (value.trim().length < 10) {
+          error = "Blog description must be at least 10 characters long.";
+        }
+        break;
+      case "image":
+        if (!value) {
+          error = "Blog image is required.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
         toast.error("File size exceeds 2MB limit.");
+        setFormErrors((prev) => ({
+          ...prev,
+          image: "File size exceeds 2MB limit.",
+        }));
         return;
       }
       const reader = new FileReader();
       reader.onloadend = () => {
+        const imageData = reader.result as string;
         setFormData((prev) => ({
           ...prev,
-          image: reader.result as string,
+          image: imageData,
         }));
+        const error = validateField("image", imageData);
+        setFormErrors((prev) => ({ ...prev, image: error }));
       };
       reader.readAsDataURL(file);
     }
@@ -123,6 +190,8 @@ const EditBlogForm = () => {
       ...prev,
       image: "",
     }));
+    const error = validateField("image", "");
+    setFormErrors((prev) => ({ ...prev, image: error }));
   };
 
   const handleInputChange = (
@@ -142,6 +211,40 @@ const EditBlogForm = () => {
       ...prev,
       [stateField]: value,
     }));
+
+    // Validate on change
+    const error = validateField(stateField, value);
+    setFormErrors((prev) => ({ ...prev, [stateField]: error }));
+  };
+
+  const handleBlur = (
+    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    const fieldMap: Record<string, string> = {
+      blogName: "name",
+      blogHeading: "heading",
+      blogDescription: "description",
+      blogSlug: "slug",
+    };
+
+    const stateField = fieldMap[name] || name;
+    const error = validateField(stateField, value);
+    setFormErrors((prev) => ({ ...prev, [stateField]: error }));
+  };
+
+  // Validate entire form before submission
+  const validateForm = () => {
+    const errors = {
+      name: validateField("name", formData.name),
+      heading: validateField("heading", formData.heading),
+      description: validateField("description", formData.description),
+      image: validateField("image", formData.image),
+      general: "",
+    };
+    setFormErrors(errors);
+
+    return !Object.values(errors).some((error) => error);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -155,8 +258,8 @@ const EditBlogForm = () => {
       return;
     }
 
-    if (!formData.image) {
-      toast.error("Image is required");
+    if (!validateForm()) {
+      toast.error("Please fix the form errors before submitting.");
       setIsSubmitting(false);
       return;
     }
@@ -202,6 +305,11 @@ const EditBlogForm = () => {
       router.push("/admin/dashboard/blog");
     } catch (error) {
       console.error("Update error:", error);
+      setFormErrors((prev) => ({
+        ...prev,
+        general:
+          error instanceof Error ? error.message : "Failed to update blog",
+      }));
       toast.error(
         error instanceof Error ? error.message : "Failed to update blog"
       );
@@ -243,11 +351,13 @@ const EditBlogForm = () => {
           <CardContent>
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <Label className="text-white/80">Blog Image</Label>
+                <Label className="text-white/80">Blog Image *</Label>
                 <div className="relative group w-full max-w-md mx-auto">
                   <label
                     htmlFor="image-upload"
-                    className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-white/30 rounded-lg cursor-pointer hover:border-purple-500 transition-colors"
+                    className={`flex flex-col items-center justify-center h-48 border-2 border-dashed rounded-lg cursor-pointer hover:border-purple-500 transition-colors ${
+                      formErrors.image ? "border-red-500" : "border-white/30"
+                    }`}
                   >
                     {formData.image ? (
                       <div className="relative w-full h-full p-2">
@@ -289,46 +399,76 @@ const EditBlogForm = () => {
                     onChange={handleImageUpload}
                     disabled={isSubmitting}
                   />
+                  {formErrors.image && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {formErrors.image}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-6">
                 <div className="space-y-2">
-                  <Label className="text-white/80">Blog Name</Label>
+                  <Label className="text-white/80">Blog Name *</Label>
                   <Input
                     name="blogName"
-                    className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                      formErrors.name ? "border-red-500" : "border-white/20"
+                    }`}
                     placeholder="Enter blog name"
                     value={formData.name}
                     onChange={handleInputChange}
+                    onBlur={handleBlur}
                     required
                     disabled={isSubmitting}
                   />
+                  {formErrors.name && (
+                    <p className="text-red-500 text-sm">{formErrors.name}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-white/80">Blog Heading</Label>
+                  <Label className="text-white/80">Blog Heading *</Label>
                   <Input
                     name="blogHeading"
-                    className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                      formErrors.heading ? "border-red-500" : "border-white/20"
+                    }`}
                     placeholder="Enter Blog Heading"
                     value={formData.heading}
                     onChange={handleInputChange}
+                    onBlur={handleBlur}
                     required
                     disabled={isSubmitting}
                   />
+                  {formErrors.heading && (
+                    <p className="text-red-500 text-sm">{formErrors.heading}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-white/80">Description</Label>
+                  <Label className="text-white/80">Description *</Label>
                   <Textarea
                     name="blogDescription"
-                    className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white h-32 w-full"
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white h-32 w-full ${
+                      formErrors.description
+                        ? "border-red-500"
+                        : "border-white/20"
+                    }`}
                     placeholder="Describe the blog..."
                     value={formData.description}
                     onChange={handleInputChange}
+                    onBlur={handleBlur}
                     required
                     disabled={isSubmitting}
                   />
+                  {formErrors.description && (
+                    <p className="text-red-500 text-sm">
+                      {formErrors.description}
+                    </p>
+                  )}
                 </div>
               </div>
+              {formErrors.general && (
+                <p className="text-red-500 text-sm">{formErrors.general}</p>
+              )}
               <div className="flex gap-4 justify-end">
                 <Button
                   type="button"

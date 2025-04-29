@@ -9,7 +9,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/app/admin/providers/AuthProviders";
-import { toast } from "sonner";
 
 // Function to generate slug
 const generateSlug = (name: string) => {
@@ -28,39 +27,87 @@ const AddCategoryForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { admin } = useAuth();
 
+  // State for form errors
+  const [formErrors, setFormErrors] = useState<{
+    categoryName: string;
+    general: string;
+  }>({
+    categoryName: "",
+    general: "",
+  });
+
   useEffect(() => {
     if (!admin?.token) {
-      toast.error("Please log in to add categories.");
       router.push("/admin");
       return;
     }
     if (!["admin", "editor"].includes(admin.role)) {
-      toast.error("You do not have permission to add categories.");
       router.push("/admin/dashboard/category");
     }
   }, [admin, router]);
 
+  const validateField = (name: string, value: any) => {
+    let error = "";
+    switch (name) {
+      case "categoryName":
+        if (!value?.trim()) {
+          error = "Category name cannot be empty.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    setCategoryName(value);
+
+    // Validate on change
+    const error = validateField("categoryName", value);
+    setFormErrors((prev) => ({ ...prev, categoryName: error }));
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    const error = validateField("categoryName", value);
+    setFormErrors((prev) => ({ ...prev, categoryName: error }));
+  };
+
+  const validateForm = () => {
+    const errors = {
+      categoryName: validateField("categoryName", categoryName),
+      general: "",
+    };
+    setFormErrors(errors);
+
+    return !Object.values(errors).some((error) => error);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true); // Prevent double submission
+    setIsSubmitting(true);
+
     if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
-      toast.error("You do not have permission to add categories.");
       router.push("/admin/dashboard/category");
       setIsSubmitting(false);
       return;
     }
+
+    if (!validateForm()) {
+      setIsSubmitting(false);
+      return;
+    }
+
     const payload = {
-      name: categoryName,
-      slug: generateSlug(categoryName), // Auto-generate slug
-      description,
+      name: categoryName.trim(),
+      slug: generateSlug(categoryName.trim()),
+      description: description.trim(),
       isActive,
     };
 
     try {
-      if (!admin?.token) {
-        throw new Error("Unauthorized: Please log in to add a category.");
-      }
-
       const response = await fetch("/api/category", {
         method: "POST",
         headers: {
@@ -78,22 +125,20 @@ const AddCategoryForm = () => {
         );
       }
 
-      toast.success("Category added successfully!", {
-        description: `Category "${categoryName}" has been created.`,
-      });
-
       router.push("/admin/dashboard/category");
     } catch (error) {
-      toast.error("Error adding category", {
-        description:
+      setFormErrors((prev) => ({
+        ...prev,
+        general:
           error instanceof Error
             ? error.message
             : "Something went wrong. Please try again.",
-      });
+      }));
     } finally {
-      setIsSubmitting(false); // Re-enable button after submission
+      setIsSubmitting(false);
     }
   };
+
   if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
     return null;
   }
@@ -121,15 +166,24 @@ const AddCategoryForm = () => {
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-2">
-                <Label className="text-white/80">Category Name</Label>
+                <Label className="text-white/80">Category Name *</Label>
                 <Input
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.categoryName
+                      ? "border-red-500"
+                      : "border-white/20"
+                  }`}
                   placeholder="Enter category name"
-                  required
                   value={categoryName}
-                  onChange={(e) => setCategoryName(e.target.value)}
+                  onChange={handleInputChange}
+                  onBlur={handleBlur}
                   disabled={isSubmitting}
                 />
+                {formErrors.categoryName && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.categoryName}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -158,6 +212,10 @@ const AddCategoryForm = () => {
                 </div>
               </div>
             </div>
+
+            {formErrors.general && (
+              <p className="text-red-500 text-sm">{formErrors.general}</p>
+            )}
 
             <div className="flex gap-4 justify-end">
               <Button

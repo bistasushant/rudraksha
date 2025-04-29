@@ -3,13 +3,13 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Upload, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Upload, X } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/app/admin/providers/AuthProviders";
 import { toast } from "sonner";
-import { IBlog } from "@/types";
+import { IBlog, IBlogcategory } from "@/types";
 import Image from "next/image";
 
 interface FormData {
@@ -21,6 +21,23 @@ interface FormData {
   image: string;
 }
 
+// Reusable debounce hook
+const useDebounce = (value: string, delay: number): string => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
 const EditBlogForm: React.FC = () => {
   const router = useRouter();
   const params = useParams();
@@ -29,6 +46,12 @@ const EditBlogForm: React.FC = () => {
   const [blog, setBlog] = useState<IBlog | null>(null);
   const [originalSlug, setOriginalSlug] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [categories, setCategories] = useState<IBlogcategory[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 1000);
   const { admin } = useAuth();
   const [formData, setFormData] = useState<FormData>({
     id: "",
@@ -44,17 +67,19 @@ const EditBlogForm: React.FC = () => {
     name: string;
     heading: string;
     description: string;
+    selectedCategories: string;
     image: string;
     general: string;
   }>({
     name: "",
     heading: "",
     description: "",
+    selectedCategories: "",
     image: "",
     general: "",
   });
 
-  // RBAC Check: Redirect users without edit permission
+  // RBAC Check and Data Fetching
   useEffect(() => {
     if (!admin?.token) {
       toast.error("Please log in to edit blogs.");
@@ -70,8 +95,9 @@ const EditBlogForm: React.FC = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        setLoadingCategories(true);
 
-        // Fetch paginated list since there's no single blog endpoint
+        // Fetch blog data
         const blogResponse = await fetch(`/api/blog?page=1&limit=100`, {
           method: "GET",
           headers: {
@@ -110,11 +136,39 @@ const EditBlogForm: React.FC = () => {
           image: blogData.image || "",
         });
 
+        // Set initial categories
+        if (Array.isArray(blogData.category)) {
+          setSelectedCategories(blogData.category);
+        } else if (blogData.category) {
+          setSelectedCategories([blogData.category]);
+        }
+
+        // Fetch blog categories
+        const categoriesResponse = await fetch("/api/blogcategory", {
+          headers: {
+            Authorization: `Bearer ${admin.token}`,
+          },
+        });
+
+        if (!categoriesResponse.ok) {
+          const errorData = await categoriesResponse.json();
+          throw new Error(
+            errorData.message || "Failed to fetch blog categories"
+          );
+        }
+
+        const categoriesResult = await categoriesResponse.json();
+        setCategories(categoriesResult.data?.blogCategories || []);
+
         // Validate initial form data
         setFormErrors({
           name: validateField("name", blogData.name || ""),
           heading: validateField("heading", blogData.heading || ""),
           description: validateField("description", blogData.description || ""),
+          selectedCategories: validateField(
+            "selectedCategories",
+            blogData.category || []
+          ),
           image: validateField("image", blogData.image || ""),
           general: "",
         });
@@ -127,39 +181,45 @@ const EditBlogForm: React.FC = () => {
         router.push("/admin/dashboard/blog");
       } finally {
         setLoading(false);
+        setLoadingCategories(false);
       }
     };
 
     fetchData();
   }, [admin, routeId, router]);
 
-  // Validation function with specific type
-  const validateField = (name: string, value: string): string => {
+  // Validation function
+  const validateField = (name: string, value: string | string[]): string => {
     let error = "";
     switch (name) {
       case "name":
-        if (!value.trim()) {
+        if (typeof value !== "string" || !value.trim()) {
           error = "Blog name cannot be empty.";
-        } else if (value.trim().length < 3) {
+        } else if (typeof value === "string" && value.trim().length < 3) {
           error = "Blog name must be at least 3 characters long.";
         }
         break;
       case "heading":
-        if (!value.trim()) {
+        if (typeof value !== "string" || !value.trim()) {
           error = "Blog heading cannot be empty.";
-        } else if (value.trim().length < 3) {
+        } else if (typeof value === "string" && value.trim().length < 3) {
           error = "Blog heading must be at least 3 characters long.";
         }
         break;
       case "description":
-        if (!value.trim()) {
+        if (typeof value !== "string" || !value.trim()) {
           error = "Blog description cannot be empty.";
-        } else if (value.trim().length < 10) {
+        } else if (typeof value === "string" && value.trim().length < 10) {
           error = "Blog description must be at least 10 characters long.";
         }
         break;
+      case "selectedCategories":
+        if (!Array.isArray(value) || value.length === 0) {
+          error = "At least one category must be selected.";
+        }
+        break;
       case "image":
-        if (!value) {
+        if (typeof value !== "string" || !value) {
           error = "Blog image is required.";
         }
         break;
@@ -201,6 +261,17 @@ const EditBlogForm: React.FC = () => {
     }));
     const error = validateField("image", "");
     setFormErrors((prev) => ({ ...prev, image: error }));
+  };
+
+  const handleCategoryToggle = (categoryId: string) => {
+    setSelectedCategories((prev) => {
+      const newCategories = prev.includes(categoryId)
+        ? prev.filter((cat) => cat !== categoryId)
+        : [...prev, categoryId];
+      const error = validateField("selectedCategories", newCategories);
+      setFormErrors((prev) => ({ ...prev, selectedCategories: error }));
+      return newCategories;
+    });
   };
 
   const handleInputChange = (
@@ -248,6 +319,10 @@ const EditBlogForm: React.FC = () => {
       name: validateField("name", formData.name),
       heading: validateField("heading", formData.heading),
       description: validateField("description", formData.description),
+      selectedCategories: validateField(
+        "selectedCategories",
+        selectedCategories
+      ),
       image: validateField("image", formData.image),
       general: "",
     };
@@ -278,12 +353,14 @@ const EditBlogForm: React.FC = () => {
         name: string;
         heading: string;
         description: string;
+        category: string[];
         image: string;
         slug?: string;
       } = {
         name: formData.name.trim(),
         heading: formData.heading.trim(),
         description: formData.description.trim(),
+        category: selectedCategories,
         image: formData.image,
       };
 
@@ -330,6 +407,12 @@ const EditBlogForm: React.FC = () => {
   if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
     return null;
   }
+
+  const filteredCategories = categories.filter((category) =>
+    category.name
+      .toLowerCase()
+      .includes(debouncedSearchTerm.toLowerCase().trim())
+  );
 
   return (
     <div className="p-4 md:p-6 lg:p-8">
@@ -450,6 +533,104 @@ const EditBlogForm: React.FC = () => {
                   {formErrors.heading && (
                     <p className="text-red-500 text-sm">{formErrors.heading}</p>
                   )}
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-white/80">Blog Categories *</Label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className={`flex items-center justify-between w-full bg-white/5 rounded-lg px-4 py-2 text-white ${
+                        formErrors.selectedCategories
+                          ? "border-red-500"
+                          : "border-white/20"
+                      } focus:ring-2 focus:ring-gray-500`}
+                      onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                      disabled={isSubmitting}
+                    >
+                      <div className="flex flex-wrap gap-2">
+                        {selectedCategories.length > 0 ? (
+                          selectedCategories.map((categoryId) => (
+                            <span
+                              key={categoryId}
+                              className="bg-purple-600 text-white text-sm px-2 py-1 rounded flex items-center"
+                            >
+                              {
+                                categories.find((cat) => cat.id === categoryId)
+                                  ?.name
+                              }
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCategoryToggle(categoryId);
+                                }}
+                                className="ml-1 text-white/80 hover:text-white cursor-pointer"
+                              >
+                                <X className="h-4 w-4" />
+                              </span>
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-white/50">
+                            Select blog categories
+                          </span>
+                        )}
+                      </div>
+                      <ChevronDown
+                        className={`h-5 w-5 text-white/50 transition-transform ${
+                          isDropdownOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                    {formErrors.selectedCategories && (
+                      <p className="text-red-500 text-sm mt-1">
+                        {formErrors.selectedCategories}
+                      </p>
+                    )}
+                    {isDropdownOpen && (
+                      <div className="absolute z-10 mt-1 w-full bg-slate-900 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        <div className="p-2">
+                          <Input
+                            placeholder="Search blog categories..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="bg-white/5 border-white/20 text-white w-full"
+                            disabled={isSubmitting}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        {loadingCategories ? (
+                          <div className="px-4 py-2 text-white/70">
+                            Loading blog categories...
+                          </div>
+                        ) : filteredCategories.length > 0 ? (
+                          filteredCategories.map((category) => (
+                            <div
+                              key={category.id}
+                              className={`px-4 py-2 cursor-pointer hover:bg-white text-white hover:text-gray-900/90 flex items-center justify-between ${
+                                category.id &&
+                                selectedCategories.includes(category.id)
+                                  ? "bg-purple-600/70"
+                                  : ""
+                              }`}
+                              onClick={() =>
+                                category.id && handleCategoryToggle(category.id)
+                              }
+                            >
+                              <span>{category.name}</span>
+                              {category.id &&
+                                selectedCategories.includes(category.id) && (
+                                  <span className="text-green-400">✓</span>
+                                )}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="px-4 py-2 text-white/70">
+                            No blog categories found
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-white/80">Description *</Label>

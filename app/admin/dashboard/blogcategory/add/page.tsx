@@ -24,6 +24,15 @@ const AddBlogCategoryForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { admin } = useAuth();
 
+  // State for form errors
+  const [formErrors, setFormErrors] = useState<{
+    blogCategoryName: string;
+    general: string;
+  }>({
+    blogCategoryName: "",
+    general: "",
+  });
+
   useEffect(() => {
     if (!admin?.token) {
       toast.error("Please log in to add categories.");
@@ -36,18 +45,68 @@ const AddBlogCategoryForm = () => {
     }
   }, [admin, router]);
 
+  // Validation function for blog category name
+  const validateField = (name: string, value: any) => {
+    let error = "";
+    switch (name) {
+      case "blogCategoryName":
+        if (!value?.trim()) {
+          error = "Blog category name cannot be empty.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
+  };
+
+  // Handle input change with validation
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    setBlogCategoryName(value);
+
+    // Validate on change
+    const error = validateField("blogCategoryName", value);
+    setFormErrors((prev) => ({ ...prev, blogCategoryName: error }));
+  };
+
+  // Handle blur with validation
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    const error = validateField("blogCategoryName", value);
+    setFormErrors((prev) => ({ ...prev, blogCategoryName: error }));
+  };
+
+  // Validate entire form before submission
+  const validateForm = () => {
+    const errors = {
+      blogCategoryName: validateField("blogCategoryName", blogCategoryName),
+      general: "",
+    };
+    setFormErrors(errors);
+
+    return !Object.values(errors).some((error) => error);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true); // Prevent double submission
+    setIsSubmitting(true);
+
     if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
       toast.error("You do not have permission to add blog categories.");
       router.push("/admin/dashboard/blogcategory");
       setIsSubmitting(false);
       return;
     }
+
+    if (!validateForm()) {
+      setIsSubmitting(false);
+      return;
+    }
+
     const payload = {
-      name: blogCategoryName,
-      slug: generateSlug(blogCategoryName),
+      name: blogCategoryName.trim(),
+      slug: generateSlug(blogCategoryName.trim()),
     };
 
     try {
@@ -79,6 +138,13 @@ const AddBlogCategoryForm = () => {
 
       router.push("/admin/dashboard/blogcategory");
     } catch (error) {
+      setFormErrors((prev) => ({
+        ...prev,
+        general:
+          error instanceof Error
+            ? error.message
+            : "Something went wrong. Please try again.",
+      }));
       toast.error("Error adding category", {
         description:
           error instanceof Error
@@ -86,9 +152,10 @@ const AddBlogCategoryForm = () => {
             : "Something went wrong. Please try again.",
       });
     } finally {
-      setIsSubmitting(false); // Re-enable button after submission
+      setIsSubmitting(false);
     }
   };
+
   if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
     return null;
   }
@@ -120,17 +187,31 @@ const AddBlogCategoryForm = () => {
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-2">
-                <Label className="text-white/80">Blog Category Name</Label>
+                <Label className="text-white/80">Blog Category Name *</Label>
                 <Input
-                  className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.blogCategoryName
+                      ? "border-red-500"
+                      : "border-white/20"
+                  }`}
                   placeholder="Enter category name"
                   required
                   value={blogCategoryName}
-                  onChange={(e) => setBlogCategoryName(e.target.value)}
+                  onChange={handleInputChange}
+                  onBlur={handleBlur}
                   disabled={isSubmitting}
                 />
+                {formErrors.blogCategoryName && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.blogCategoryName}
+                  </p>
+                )}
               </div>
             </div>
+
+            {formErrors.general && (
+              <p className="text-red-500 text-sm">{formErrors.general}</p>
+            )}
 
             <div className="flex gap-4 justify-end">
               <Button

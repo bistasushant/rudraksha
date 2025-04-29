@@ -265,6 +265,9 @@ const BlogPage = () => {
         <TableCell>
           <Skeleton className="h-4 w-24 bg-white/10" />
         </TableCell>
+        <TableCell>
+          <Skeleton className="h-4 w-24 bg-white/10" />
+        </TableCell>
         {showActionsColumn && (
           <TableCell>
             <div className="flex gap-2">

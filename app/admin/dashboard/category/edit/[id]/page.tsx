@@ -7,39 +7,46 @@ import { ArrowLeft } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/app/admin/providers/AuthProviders";
-import { toast } from "sonner";
 import { ICategory } from "@/types";
 
 const EditCategoryForm = () => {
   const router = useRouter();
   const { admin } = useAuth();
   const [categoryName, setCategoryName] = useState("");
-  const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // State for form errors
+  const [formErrors, setFormErrors] = useState<{
+    categoryName: string;
+    general: string;
+  }>({
+    categoryName: "",
+    general: "",
+  });
 
   const params = useParams();
   const categorySlug = Array.isArray(params.id) ? params.id[0] : params.id;
 
   useEffect(() => {
     if (!admin?.token) {
-      toast.error("Please log in to edit categories.");
       router.push("/admin");
       return;
     }
     if (!["admin", "editor"].includes(admin.role)) {
-      toast.error("You do not have permission to edit categories.");
       router.push("/admin/dashboard/category");
       return;
     }
     const fetchCategory = async () => {
       if (!categorySlug) {
-        toast.error("No category slug provided in URL.");
+        setFormErrors((prev) => ({
+          ...prev,
+          general: "No category slug provided in URL.",
+        }));
         router.push("/admin/dashboard/category");
         return;
       }
@@ -59,9 +66,6 @@ const EditCategoryForm = () => {
         }
 
         const data = await response.json();
-
-        // FIX: Access the categories array correctly
-        // It's inside data.data.categories, not just data.data
         const categories = Array.isArray(data.data?.categories)
           ? data.data.categories
           : [];
@@ -75,19 +79,17 @@ const EditCategoryForm = () => {
         }
 
         setCategoryName(category.name || "");
-        setSlug(category.slug || "");
         setDescription(category.description || "");
         setIsActive(category.isActive ?? true);
       } catch (error) {
         console.error("Error fetching category:", error);
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Failed to load category data",
-          {
-            description: "Please try again or check the console for details.",
-          }
-        );
+        setFormErrors((prev) => ({
+          ...prev,
+          general:
+            error instanceof Error
+              ? error.message
+              : "Failed to load category data",
+        }));
         router.push("/admin/dashboard/category");
       } finally {
         setIsLoading(false);
@@ -97,29 +99,61 @@ const EditCategoryForm = () => {
     fetchCategory();
   }, [admin, categorySlug, router]);
 
+  const validateField = (name: string, value: any) => {
+    let error = "";
+    switch (name) {
+      case "categoryName":
+        if (!value?.trim()) {
+          error = "Category name cannot be empty.";
+        }
+        break;
+      default:
+        break;
+    }
+    return error;
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    setCategoryName(value);
+
+    // Validate on change
+    const error = validateField("categoryName", value);
+    setFormErrors((prev) => ({ ...prev, categoryName: error }));
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    const error = validateField("categoryName", value);
+    setFormErrors((prev) => ({ ...prev, categoryName: error }));
+  };
+
+  const validateForm = () => {
+    const errors = {
+      categoryName: validateField("categoryName", categoryName),
+      general: "",
+    };
+    setFormErrors(errors);
+
+    return !Object.values(errors).some((error) => error);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
-      toast.error("You do not have permission to edit categories.");
       router.push("/admin/dashboard/category");
       setIsSubmitting(false);
       return;
     }
 
-    if (!categoryName.trim()) {
-      toast.error("Category name is required");
-      return;
-    }
-
-    if (!slug.trim()) {
-      toast.error("Slug is required");
+    if (!validateForm()) {
+      setIsSubmitting(false);
       return;
     }
 
     const payload = {
       name: categoryName.trim(),
-      slug: slug.trim(),
       description: description.trim() || undefined,
       isActive,
     };
@@ -149,25 +183,23 @@ const EditCategoryForm = () => {
         );
       }
 
-      toast.success("Category updated successfully!", {
-        description: "The category has been updated.",
-      });
       router.push("/admin/dashboard/category");
     } catch (error) {
       console.error("Error updating category:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Something went wrong",
-        {
-          description: "Check the console for more details.",
-        }
-      );
+      setFormErrors((prev) => ({
+        ...prev,
+        general:
+          error instanceof Error ? error.message : "Something went wrong",
+      }));
     } finally {
       setIsSubmitting(false);
     }
   };
+
   if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
     return null;
   }
+
   return (
     <div className="p-4 md:p-6 lg:p-8">
       <div className="flex items-center mb-4">
@@ -197,15 +229,24 @@ const EditCategoryForm = () => {
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div className="grid grid-cols-1 gap-6">
                 <div className="space-y-2">
-                  <Label className="text-white/80">Category Name</Label>
+                  <Label className="text-white/80">Category Name *</Label>
                   <Input
-                    className="bg-white/5 border-white/20 focus:ring-2 focus:ring-purple-500 text-white w-full"
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                      formErrors.categoryName
+                        ? "border-red-500"
+                        : "border-white/20"
+                    }`}
                     placeholder="Enter category name"
-                    required
                     value={categoryName}
-                    onChange={(e) => setCategoryName(e.target.value)}
+                    onChange={handleInputChange}
+                    onBlur={handleBlur}
                     disabled={isSubmitting}
                   />
+                  {formErrors.categoryName && (
+                    <p className="text-red-500 text-sm">
+                      {formErrors.categoryName}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -220,6 +261,7 @@ const EditCategoryForm = () => {
                     disabled={isSubmitting}
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label className="text-white/80">Status</Label>
                   <div className="flex items-center">
@@ -235,6 +277,11 @@ const EditCategoryForm = () => {
                   </div>
                 </div>
               </div>
+
+              {formErrors.general && (
+                <p className="text-red-500 text-sm">{formErrors.general}</p>
+              )}
+
               <div className="flex gap-4 justify-end">
                 <Button
                   type="button"

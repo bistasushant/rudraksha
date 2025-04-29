@@ -1,157 +1,99 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft, Upload, X } from "lucide-react";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { useAuth } from "@/app/admin/providers/AuthProviders";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { IBlog } from "@/types";
-import Image from "next/image";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, ChevronDown } from "lucide-react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
+import { Input } from "@/components/ui/input";
+import { useAuth } from "@/app/admin/providers/AuthProviders";
+import { AdminRole } from "@/types";
 
-const EditBlogForm = () => {
+const AddUserForm = () => {
   const router = useRouter();
-  const params = useParams();
-  const routeId = params.id as string;
-  const [loading, setLoading] = useState(true);
-  const [blog, setBlog] = useState<IBlog | null>(null);
-  const [originalSlug, setOriginalSlug] = useState<string>("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const { admin } = useAuth();
-  const [formData, setFormData] = useState({
-    id: "",
-    name: "",
-    heading: "",
-    description: "",
-    slug: "",
-    image: "",
-  });
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [contactNumber, setContactNumber] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<AdminRole>("user");
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // State for form errors
   const [formErrors, setFormErrors] = useState<{
+    email: string;
     name: string;
-    heading: string;
-    description: string;
-    image: string;
+    contactNumber: string;
+    password: string;
+    confirmPassword: string;
+    selectedRole: string;
     general: string;
   }>({
+    email: "",
     name: "",
-    heading: "",
-    description: "",
-    image: "",
+    contactNumber: "",
+    password: "",
+    confirmPassword: "",
+    selectedRole: "",
     general: "",
   });
 
-  // RBAC Check: Redirect users without edit permission
-  useEffect(() => {
-    if (!admin?.token) {
-      toast.error("Please log in to edit blogs.");
-      router.push("/admin");
-      return;
-    }
-    if (!["admin", "editor"].includes(admin.role)) {
-      toast.error("You do not have permission to edit blogs.");
-      router.push("/admin/dashboard/blog");
-      return;
-    }
-
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-
-        // Fetch paginated list since there's no single blog endpoint
-        const blogResponse = await fetch(`/api/blog?page=1&limit=100`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${admin.token}`,
-          },
-          cache: "no-store",
-        });
-
-        if (!blogResponse.ok) {
-          const errorData = await blogResponse.json();
-          throw new Error(errorData.message || "Failed to fetch blog");
-        }
-
-        const blogResult = await blogResponse.json();
-        const blogs = Array.isArray(blogResult.data?.blogs)
-          ? blogResult.data.blogs
-          : [];
-
-        const blogData = blogs.find(
-          (p: IBlog) => p.id === routeId || p.slug === routeId
-        );
-
-        if (!blogData || typeof blogData !== "object") {
-          throw new Error("Blog data not found or invalid in response");
-        }
-
-        setBlog(blogData);
-        setOriginalSlug(blogData.slug || "");
-        setFormData({
-          id: blogData.id || "",
-          name: blogData.name || "",
-          heading: blogData.heading || "",
-          description: blogData.description || "",
-          slug: blogData.slug || "",
-          image: blogData.image || "",
-        });
-
-        // Validate initial form data
-        setFormErrors({
-          name: validateField("name", blogData.name || ""),
-          heading: validateField("heading", blogData.heading || ""),
-          description: validateField("description", blogData.description || ""),
-          image: validateField("image", blogData.image || ""),
-          general: "",
-        });
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        toast.error(
-          error instanceof Error ? error.message : "Failed to load data.",
-          { description: "Please try again later." }
-        );
-        router.push("/admin/dashboard/blog");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [admin, routeId, router]);
+  const roles: AdminRole[] = ["admin", "editor", "user"];
 
   // Validation function
   const validateField = (name: string, value: any) => {
     let error = "";
     switch (name) {
+      case "email":
+        if (!value?.trim()) {
+          error = "Email cannot be empty.";
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+          error = "Please enter a valid email address (e.g., user@domain.com).";
+        }
+        break;
       case "name":
         if (!value?.trim()) {
-          error = "Blog name cannot be empty.";
+          error = "Name cannot be empty.";
         } else if (value.trim().length < 3) {
-          error = "Blog name must be at least 3 characters long.";
+          error = "Name must be at least 3 characters long.";
         }
         break;
-      case "heading":
+      case "contactNumber":
         if (!value?.trim()) {
-          error = "Blog heading cannot be empty.";
-        } else if (value.trim().length < 3) {
-          error = "Blog heading must be at least 3 characters long.";
+          error = "Phone number cannot be empty.";
+        } else if (!/^\d{10}$/.test(value.trim())) {
+          error = "Phone number must be exactly 10 digits.";
         }
         break;
-      case "description":
-        if (!value?.trim()) {
-          error = "Blog description cannot be empty.";
-        } else if (value.trim().length < 10) {
-          error = "Blog description must be at least 10 characters long.";
-        }
-        break;
-      case "image":
+      case "password":
         if (!value) {
-          error = "Blog image is required.";
+          error = "Password cannot be empty.";
+        } else if (value.length < 8) {
+          error = "Password must be at least 8 characters long.";
+        } else if (!/^[A-Z]/.test(value)) {
+          error = "Password must start with a capital letter.";
+        } else if (!/[0-9]/.test(value)) {
+          error = "Password must include at least one number.";
+        } else if (!/[^A-Za-z0-9]/.test(value)) {
+          error = "Password must include at least one special character.";
+        }
+        break;
+      case "confirmPassword":
+        if (!value) {
+          error = "Confirm password cannot be empty.";
+        } else if (value !== password) {
+          error = "Passwords do not match.";
+        }
+        break;
+      case "selectedRole":
+        if (!value || !roles.includes(value)) {
+          error = "Please select a valid role.";
         }
         break;
       default:
@@ -160,86 +102,51 @@ const EditBlogForm = () => {
     return error;
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error("File size exceeds 2MB limit.");
-        setFormErrors((prev) => ({
-          ...prev,
-          image: "File size exceeds 2MB limit.",
-        }));
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const imageData = reader.result as string;
-        setFormData((prev) => ({
-          ...prev,
-          image: imageData,
-        }));
-        const error = validateField("image", imageData);
-        setFormErrors((prev) => ({ ...prev, image: error }));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const removeImage = () => {
-    setFormData((prev) => ({
-      ...prev,
-      image: "",
-    }));
-    const error = validateField("image", "");
-    setFormErrors((prev) => ({ ...prev, image: error }));
-  };
-
+  // Handle input change with validation
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    field: string,
+    e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const { name, value } = e.target;
-    const fieldMap: Record<string, string> = {
-      blogName: "name",
-      blogHeading: "heading",
-      blogDescription: "description",
-      blogSlug: "slug",
-    };
-
-    const stateField = fieldMap[name] || name;
-
-    setFormData((prev) => ({
-      ...prev,
-      [stateField]: value,
-    }));
+    const { value } = e.target;
+    if (field === "email") setEmail(value);
+    if (field === "name") setName(value);
+    if (field === "contactNumber") setContactNumber(value);
+    if (field === "password") {
+      setPassword(value);
+      // Re-validate confirmPassword when password changes
+      const confirmError = validateField("confirmPassword", confirmPassword);
+      setFormErrors((prev) => ({ ...prev, confirmPassword: confirmError }));
+    }
+    if (field === "confirmPassword") setConfirmPassword(value);
 
     // Validate on change
-    const error = validateField(stateField, value);
-    setFormErrors((prev) => ({ ...prev, [stateField]: error }));
+    const error = validateField(field, value);
+    setFormErrors((prev) => ({ ...prev, [field]: error }));
   };
 
-  const handleBlur = (
-    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    const fieldMap: Record<string, string> = {
-      blogName: "name",
-      blogHeading: "heading",
-      blogDescription: "description",
-      blogSlug: "slug",
-    };
+  // Handle blur with validation
+  const handleBlur = (field: string, e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    const error = validateField(field, value);
+    setFormErrors((prev) => ({ ...prev, [field]: error }));
+  };
 
-    const stateField = fieldMap[name] || name;
-    const error = validateField(stateField, value);
-    setFormErrors((prev) => ({ ...prev, [stateField]: error }));
+  const handleRoleSelect = (role: AdminRole) => {
+    setSelectedRole(role);
+    setIsDropdownOpen(false);
+    const error = validateField("selectedRole", role);
+    setFormErrors((prev) => ({ ...prev, selectedRole: error }));
   };
 
   // Validate entire form before submission
   const validateForm = () => {
     const errors = {
-      name: validateField("name", formData.name),
-      heading: validateField("heading", formData.heading),
-      description: validateField("description", formData.description),
-      image: validateField("image", formData.image),
+      email: validateField("email", email),
+      name: validateField("name", name),
+      contactNumber: validateField("contactNumber", contactNumber),
+      password: validateField("password", password),
+      confirmPassword: validateField("confirmPassword", confirmPassword),
+      selectedRole: validateField("selectedRole", selectedRole),
       general: "",
     };
     setFormErrors(errors);
@@ -251,9 +158,15 @@ const EditBlogForm = () => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
-      toast.error("You do not have permission to edit blogs.");
-      router.push("/admin/dashboard/blog");
+    if (!admin?.token) {
+      toast.error("Please log in to add users");
+      router.push("/admin");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (admin.role !== "admin") {
+      toast.error("Only admins can add users");
       setIsSubmitting(false);
       return;
     }
@@ -265,63 +178,38 @@ const EditBlogForm = () => {
     }
 
     try {
-      const updateData: {
-        name: string;
-        heading: string;
-        description: string;
-        image: string;
-        slug?: string;
-      } = {
-        name: formData.name.trim(),
-        heading: formData.heading.trim(),
-        description: formData.description.trim(),
-        image: formData.image,
-      };
-
-      if (formData.slug && formData.slug.trim() !== originalSlug) {
-        updateData.slug = formData.slug.trim();
-      }
-
-      const updateEndpoint = originalSlug
-        ? `/api/blog/${originalSlug}`
-        : `/api/blog/${routeId}`;
-
-      const response = await fetch(updateEndpoint, {
-        method: "PATCH",
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${admin.token}`,
         },
-        body: JSON.stringify(updateData),
+        body: JSON.stringify({
+          email: email.trim(),
+          name: name.trim(),
+          contactNumber: contactNumber.trim(),
+          password,
+          confirmPassword,
+          role: selectedRole,
+        }),
       });
 
       const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.message || "Failed to update blog");
+        throw new Error(data.message || "Failed to add user");
       }
 
-      toast.success("Blog updated successfully");
-      router.push("/admin/dashboard/blog");
+      toast.success(data.message || "User added successfully");
+      router.push("/admin/dashboard/user");
     } catch (error) {
-      console.error("Update error:", error);
-      setFormErrors((prev) => ({
-        ...prev,
-        general:
-          error instanceof Error ? error.message : "Failed to update blog",
-      }));
-      toast.error(
-        error instanceof Error ? error.message : "Failed to update blog"
-      );
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to add user";
+      setFormErrors((prev) => ({ ...prev, general: errorMessage }));
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  // Render nothing if unauthorized (handled by useEffect redirect)
-  if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
-    return null;
-  }
 
   return (
     <div className="p-4 md:p-6 lg:p-8">
@@ -330,169 +218,230 @@ const EditBlogForm = () => {
           type="button"
           variant="secondary"
           className="bg-white/10 hover:bg-white/20 text-white"
-          onClick={() => router.push("/admin/dashboard/blog")}
+          onClick={() => router.back()}
+          disabled={isSubmitting}
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
       </div>
-      <h1 className="text-2xl font-bold text-white mb-4">
-        Edit Blog: {blog?.name || "Loading..."}
-      </h1>
-      {loading ? (
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
-        </div>
-      ) : (
-        <Card className="bg-gradient-to-br from-slate-950 to-indigo-950 border border-white/40 max-w-3xl mx-auto">
-          <CardHeader>
-            <h2 className="text-lg font-bold text-white">Blog Details</h2>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-6" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <Label className="text-white/80">Blog Image *</Label>
-                <div className="relative group w-full max-w-md mx-auto">
-                  <label
-                    htmlFor="image-upload"
-                    className={`flex flex-col items-center justify-center h-48 border-2 border-dashed rounded-lg cursor-pointer hover:border-purple-500 transition-colors ${
-                      formErrors.image ? "border-red-500" : "border-white/30"
+      <h1 className="text-2xl font-bold text-white mb-4">Add New User</h1>
+      <Card className="bg-gradient-to-br from-slate-950 to-indigo-950 border border-white/40 max-w-3xl mx-auto">
+        <CardHeader>
+          <h2 className="text-lg font-bold text-white">User Details</h2>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 gap-6">
+              <div className="space-y-2 relative">
+                <Label className="text-white/80">Select Role *</Label>
+                <button
+                  type="button"
+                  className={`flex items-center justify-between w-full bg-white/5 rounded-lg px-4 py-2 text-white ${
+                    formErrors.selectedRole
+                      ? "border-red-500"
+                      : "border-white/20"
+                  } focus:ring-2 focus:ring-gray-500`}
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  disabled={isSubmitting}
+                >
+                  <span className="text-white">
+                    {selectedRole
+                      ? selectedRole.charAt(0).toUpperCase() +
+                        selectedRole.slice(1)
+                      : "Select role"}
+                  </span>
+                  <ChevronDown
+                    className={`h-5 w-5 text-white/50 transition-transform ${
+                      isDropdownOpen ? "rotate-180" : ""
                     }`}
-                  >
-                    {formData.image ? (
-                      <div className="relative w-full h-full p-2">
-                        <Image
-                          src={formData.image}
-                          alt="Blog image preview"
-                          fill
-                          className="object-contain rounded-lg"
-                        />
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeImage();
-                          }}
-                          className="absolute top-2 right-2 p-1 bg-red-500/80 rounded-full hover:bg-red-400 transition-colors"
+                  />
+                </button>
+                {formErrors.selectedRole && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.selectedRole}
+                  </p>
+                )}
+                {isDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-full bg-slate-900 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {roles.length > 0 ? (
+                      roles.map((role) => (
+                        <div
+                          key={role}
+                          className={`px-4 py-2 cursor-pointer hover:bg-white text-white hover:text-gray-900/90 flex items-center justify-between ${
+                            selectedRole === role ? "bg-purple-600/70" : ""
+                          }`}
+                          onClick={() => handleRoleSelect(role)}
                         >
-                          <X className="h-4 w-4 text-white" />
-                        </button>
-                      </div>
+                          <span>
+                            {role.charAt(0).toUpperCase() + role.slice(1)}
+                          </span>
+                          {selectedRole === role && (
+                            <span className="text-green-400">✓</span>
+                          )}
+                        </div>
+                      ))
                     ) : (
-                      <>
-                        <Upload className="h-12 w-12 text-white/50 mb-2 group-hover:text-purple-400" />
-                        <span className="text-white/70 group-hover:text-purple-400">
-                          Click to upload an image
-                        </span>
-                        <span className="text-sm text-white/50">
-                          PNG, JPG (max. 2MB)
-                        </span>
-                      </>
+                      <div className="px-4 py-2 text-white/70">
+                        No roles available
+                      </div>
                     )}
-                  </label>
-                  <input
-                    id="image-upload"
-                    name="image"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleImageUpload}
-                    disabled={isSubmitting}
-                  />
-                  {formErrors.image && (
-                    <p className="text-red-500 text-sm mt-1">
-                      {formErrors.image}
-                    </p>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-1 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-white/80">Blog Name *</Label>
+              <div className="space-y-2">
+                <Label className="text-white/80">User Name *</Label>
+                <Input
+                  type="text"
+                  value={name}
+                  onChange={(e) => handleInputChange("name", e)}
+                  onBlur={(e) => handleBlur("name", e)}
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.name ? "border-red-500" : "border-white/20"
+                  }`}
+                  placeholder="Enter user name"
+                  required
+                  disabled={isSubmitting}
+                />
+                {formErrors.name && (
+                  <p className="text-red-500 text-sm">{formErrors.name}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white/80">Email *</Label>
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={(e) => handleInputChange("email", e)}
+                  onBlur={(e) => handleBlur("email", e)}
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.email ? "border-red-500" : "border-white/20"
+                  }`}
+                  placeholder="Enter email"
+                  required
+                  disabled={isSubmitting}
+                />
+                {formErrors.email && (
+                  <p className="text-red-500 text-sm">{formErrors.email}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white/80">Phone Number *</Label>
+                <Input
+                  type="text" // Changed to text to enforce exact digit validation
+                  value={contactNumber}
+                  onChange={(e) => handleInputChange("contactNumber", e)}
+                  onBlur={(e) => handleBlur("contactNumber", e)}
+                  className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
+                    formErrors.contactNumber
+                      ? "border-red-500"
+                      : "border-white/20"
+                  }`}
+                  placeholder="Enter phone number (10 digits)"
+                  required
+                  disabled={isSubmitting}
+                />
+                {formErrors.contactNumber && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.contactNumber}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white/80">Password *</Label>
+                <div className="relative lg:w-full">
                   <Input
-                    name="blogName"
-                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
-                      formErrors.name ? "border-red-500" : "border-white/20"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => handleInputChange("password", e)}
+                    onBlur={(e) => handleBlur("password", e)}
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white pr-10 ${
+                      formErrors.password ? "border-red-500" : "border-white/20"
                     }`}
-                    placeholder="Enter blog name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    onBlur={handleBlur}
+                    placeholder="Enter password"
                     required
                     disabled={isSubmitting}
                   />
-                  {formErrors.name && (
-                    <p className="text-red-500 text-sm">{formErrors.name}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-white/80">Blog Heading *</Label>
-                  <Input
-                    name="blogHeading"
-                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white w-full ${
-                      formErrors.heading ? "border-red-500" : "border-white/20"
-                    }`}
-                    placeholder="Enter Blog Heading"
-                    value={formData.heading}
-                    onChange={handleInputChange}
-                    onBlur={handleBlur}
-                    required
+                  <button
+                    type="button"
+                    className="absolute right-3 top-3 text-white/70 hover:text-white"
+                    onClick={() => setShowPassword(!showPassword)}
                     disabled={isSubmitting}
-                  />
-                  {formErrors.heading && (
-                    <p className="text-red-500 text-sm">{formErrors.heading}</p>
-                  )}
+                  >
+                    {showPassword ? (
+                      <AiOutlineEyeInvisible />
+                    ) : (
+                      <AiOutlineEye />
+                    )}
+                  </button>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-white/80">Description *</Label>
-                  <Textarea
-                    name="blogDescription"
-                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white h-32 w-full ${
-                      formErrors.description
+                {formErrors.password && (
+                  <p className="text-red-500 text-sm">{formErrors.password}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white/80">Confirm Password *</Label>
+                <div className="relative lg:w-full">
+                  <Input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => handleInputChange("confirmPassword", e)}
+                    onBlur={(e) => handleBlur("confirmPassword", e)}
+                    className={`bg-white/5 border focus:ring-2 focus:ring-purple-500 text-white pr-10 ${
+                      formErrors.confirmPassword
                         ? "border-red-500"
                         : "border-white/20"
                     }`}
-                    placeholder="Describe the blog..."
-                    value={formData.description}
-                    onChange={handleInputChange}
-                    onBlur={handleBlur}
+                    placeholder="Confirm password"
                     required
                     disabled={isSubmitting}
                   />
-                  {formErrors.description && (
-                    <p className="text-red-500 text-sm">
-                      {formErrors.description}
-                    </p>
-                  )}
+                  <button
+                    type="button"
+                    className="absolute right-3 top-3 text-white/70 hover:text-white"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    disabled={isSubmitting}
+                  >
+                    {showConfirmPassword ? (
+                      <AiOutlineEyeInvisible />
+                    ) : (
+                      <AiOutlineEye />
+                    )}
+                  </button>
                 </div>
+                {formErrors.confirmPassword && (
+                  <p className="text-red-500 text-sm">
+                    {formErrors.confirmPassword}
+                  </p>
+                )}
               </div>
-              {formErrors.general && (
-                <p className="text-red-500 text-sm">{formErrors.general}</p>
-              )}
-              <div className="flex gap-4 justify-end">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="bg-white/10 hover:bg-white/20 text-white"
-                  onClick={() => router.back()}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  className="bg-purple-600 hover:bg-purple-700 text-white"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? "Updating..." : "Update Blog"}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+            </div>
+            {formErrors.general && (
+              <p className="text-red-500 text-sm">{formErrors.general}</p>
+            )}
+            <div className="flex gap-4 justify-end">
+              <Button
+                type="button"
+                variant="secondary"
+                className="bg-white/10 hover:bg-white/20 text-white"
+                onClick={() => router.back()}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Adding..." : "Add User"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 };
 
-export default EditBlogForm;
+export default AddUserForm;

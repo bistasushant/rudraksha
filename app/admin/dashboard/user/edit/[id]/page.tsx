@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react"; // Added useMemo
 import { useRouter, useParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,65 @@ const EditUserPage = () => {
   const userEmail =
     typeof params.id === "string" ? decodeURIComponent(params.id) : "";
   const { admin } = useAuth();
-  const roles: AdminRole[] = ["admin", "editor", "user"];
+
+  // Memoize the roles array to prevent re-creation on every render
+  const roles: AdminRole[] = useMemo(() => ["admin", "editor", "user"], []);
+
+  // Validation function
+  const validateField = useCallback(
+    (
+      name: string,
+      value: string | { value: string; role?: AdminRole } | AdminRole,
+      roleForContactNumber: AdminRole = userData.role
+    ) => {
+      let error = "";
+      switch (name) {
+        case "name":
+          if (typeof value === "string" && !value.trim()) {
+            error = "Name cannot be empty.";
+          } else if (typeof value === "string" && value.trim().length < 3) {
+            error = "Name must be at least 3 characters long.";
+          }
+          break;
+        case "email":
+          if (typeof value === "string" && !value.trim()) {
+            error = "Email cannot be empty.";
+          } else if (
+            typeof value === "string" &&
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+          ) {
+            error =
+              "Please enter a valid email address (e.g., user@domain.com).";
+          }
+          break;
+        case "contactNumber":
+          const contactValue =
+            typeof value === "string" ? value : value?.value || "";
+          const validationRole =
+            typeof value === "object" && value.role
+              ? value.role
+              : roleForContactNumber;
+          if (validationRole === "user" && !contactValue.trim()) {
+            error = "Contact number is required for user role.";
+          } else if (
+            contactValue.trim() &&
+            !/^\d{10}$/.test(contactValue.trim())
+          ) {
+            error = "Contact number must be exactly 10 digits.";
+          }
+          break;
+        case "role":
+          if (!value || !roles.includes(value as AdminRole)) {
+            error = "Please select a valid role.";
+          }
+          break;
+        default:
+          break;
+      }
+      return error;
+    },
+    [userData.role, roles]
+  );
 
   // Fetch user data
   useEffect(() => {
@@ -118,51 +176,7 @@ const EditUserPage = () => {
     };
 
     fetchUserData();
-  }, [userEmail, admin, router]);
-
-  // Validation function
-  const validateField = (
-    name: string,
-    value: any,
-    roleForContactNumber: AdminRole = userData.role
-  ) => {
-    let error = "";
-    switch (name) {
-      case "name":
-        if (!value?.trim()) {
-          error = "Name cannot be empty.";
-        } else if (value.trim().length < 3) {
-          error = "Name must be at least 3 characters long.";
-        }
-        break;
-      case "email":
-        if (!value?.trim()) {
-          error = "Email cannot be empty.";
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
-          error = "Please enter a valid email address (e.g., user@domain.com).";
-        }
-        break;
-      case "contactNumber":
-        const contactValue = value?.value || value || "";
-        if (roleForContactNumber === "user" && !contactValue.trim()) {
-          error = "Contact number is required for user role.";
-        } else if (
-          contactValue.trim() &&
-          !/^\d{10}$/.test(contactValue.trim())
-        ) {
-          error = "Contact number must be exactly 10 digits.";
-        }
-        break;
-      case "role":
-        if (!value || !roles.includes(value)) {
-          error = "Please select a valid role.";
-        }
-        break;
-      default:
-        break;
-    }
-    return error;
-  };
+  }, [userEmail, admin, router, validateField]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -377,7 +391,7 @@ const EditUserPage = () => {
                 <Input
                   id="contactNumber"
                   name="contactNumber"
-                  type="text" // Changed to text for strict digit validation
+                  type="text"
                   value={userData.contactNumber}
                   onChange={handleInputChange}
                   onBlur={handleBlur}

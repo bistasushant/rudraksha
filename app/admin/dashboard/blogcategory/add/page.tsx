@@ -10,7 +10,7 @@ import { useAuth } from "@/app/admin/providers/AuthProviders";
 import { toast } from "sonner";
 
 // Function to generate slug
-const generateSlug = (name: string) => {
+const generateSlug = (name: string): string => {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9 -]/g, "")
@@ -18,10 +18,10 @@ const generateSlug = (name: string) => {
     .trim();
 };
 
-const AddBlogCategoryForm = () => {
+const AddBlogCategoryForm: React.FC = () => {
   const router = useRouter();
-  const [blogCategoryName, setBlogCategoryName] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [blogCategoryName, setBlogCategoryName] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const { admin } = useAuth();
 
   // State for form errors
@@ -46,11 +46,11 @@ const AddBlogCategoryForm = () => {
   }, [admin, router]);
 
   // Validation function for blog category name
-  const validateField = (name: string, value: any) => {
+  const validateField = (name: string, value: string): string => {
     let error = "";
     switch (name) {
       case "blogCategoryName":
-        if (!value?.trim()) {
+        if (!value.trim()) {
           error = "Blog category name cannot be empty.";
         }
         break;
@@ -78,7 +78,7 @@ const AddBlogCategoryForm = () => {
   };
 
   // Validate entire form before submission
-  const validateForm = () => {
+  const validateForm = (): boolean => {
     const errors = {
       blogCategoryName: validateField("blogCategoryName", blogCategoryName),
       general: "",
@@ -88,7 +88,7 @@ const AddBlogCategoryForm = () => {
     return !Object.values(errors).some((error) => error);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
 
@@ -100,6 +100,7 @@ const AddBlogCategoryForm = () => {
     }
 
     if (!validateForm()) {
+      toast.error("Please fix the form errors before submitting.");
       setIsSubmitting(false);
       return;
     }
@@ -138,18 +139,16 @@ const AddBlogCategoryForm = () => {
 
       router.push("/admin/dashboard/blogcategory");
     } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Something went wrong. Please try again.";
       setFormErrors((prev) => ({
         ...prev,
-        general:
-          error instanceof Error
-            ? error.message
-            : "Something went wrong. Please try again.",
+        general: errorMessage,
       }));
       toast.error("Error adding category", {
-        description:
-          error instanceof Error
-            ? error.message
-            : "Something went wrong. Please try again.",
+        description: errorMessage,
       });
     } finally {
       setIsSubmitting(false);

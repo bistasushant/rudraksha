@@ -110,7 +110,7 @@ const EditBlogCategoryForm = () => {
   }, [admin, blogCategorySlug, router]);
 
   // Validation function
-  const validateField = (name: string, value: any) => {
+  const validateField = (name: string, value: string): string => {
     let error = "";
     switch (name) {
       case "blogCategoryName":

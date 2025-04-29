@@ -47,52 +47,58 @@ const AddUserForm = () => {
   const roles: AdminRole[] = ["admin", "editor", "user"];
 
   // Validation function
-  const validateField = (name: string, value: any) => {
+  const validateField = (name: string, value: string | AdminRole) => {
     let error = "";
     switch (name) {
       case "email":
-        if (!value?.trim()) {
+        if (typeof value === "string" && !value.trim()) {
           error = "Email cannot be empty.";
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+        } else if (
+          typeof value === "string" &&
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+        ) {
           error = "Please enter a valid email address (e.g., user@domain.com).";
         }
         break;
       case "name":
-        if (!value?.trim()) {
+        if (typeof value === "string" && !value.trim()) {
           error = "Name cannot be empty.";
-        } else if (value.trim().length < 3) {
+        } else if (typeof value === "string" && value.trim().length < 3) {
           error = "Name must be at least 3 characters long.";
         }
         break;
       case "contactNumber":
-        if (!value?.trim()) {
+        if (typeof value === "string" && !value.trim()) {
           error = "Phone number cannot be empty.";
-        } else if (!/^\d{10}$/.test(value.trim())) {
+        } else if (
+          typeof value === "string" &&
+          !/^\d{10}$/.test(value.trim())
+        ) {
           error = "Phone number must be exactly 10 digits.";
         }
         break;
       case "password":
-        if (!value) {
+        if (typeof value === "string" && !value) {
           error = "Password cannot be empty.";
-        } else if (value.length < 8) {
+        } else if (typeof value === "string" && value.length < 8) {
           error = "Password must be at least 8 characters long.";
-        } else if (!/^[A-Z]/.test(value)) {
+        } else if (typeof value === "string" && !/^[A-Z]/.test(value)) {
           error = "Password must start with a capital letter.";
-        } else if (!/[0-9]/.test(value)) {
+        } else if (typeof value === "string" && !/[0-9]/.test(value)) {
           error = "Password must include at least one number.";
-        } else if (!/[^A-Za-z0-9]/.test(value)) {
+        } else if (typeof value === "string" && !/[^A-Za-z0-9]/.test(value)) {
           error = "Password must include at least one special character.";
         }
         break;
       case "confirmPassword":
-        if (!value) {
+        if (typeof value === "string" && !value) {
           error = "Confirm password cannot be empty.";
-        } else if (value !== password) {
+        } else if (typeof value === "string" && value !== password) {
           error = "Passwords do not match.";
         }
         break;
       case "selectedRole":
-        if (!value || !roles.includes(value)) {
+        if (!value || !roles.includes(value as AdminRole)) {
           error = "Please select a valid role.";
         }
         break;

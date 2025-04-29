@@ -9,10 +9,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import Image from "next/image";
 import { useAuth } from "@/app/admin/providers/AuthProviders";
+import { toast } from "sonner";
 import { ICategory } from "@/types";
 
 // Utility to generate slug from product name
-const generateSlug = (name: string) => {
+const generateSlug = (name: string): string => {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9 -]/g, "")
@@ -21,7 +22,7 @@ const generateSlug = (name: string) => {
 };
 
 // Custom debounce hook
-const useDebounce = (value: string, delay: number) => {
+const useDebounce = (value: string, delay: number): string => {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
   useEffect(() => {
@@ -37,36 +38,46 @@ const useDebounce = (value: string, delay: number) => {
   return debouncedValue;
 };
 
-const AddProductForm = () => {
+interface FormValues {
+  productName: string;
+  price: string;
+  stockQuantity: string;
+  description: string;
+  benefit: string;
+}
+
+interface FormErrors {
+  productName: string;
+  categories: string;
+  price: string;
+  stockQuantity: string;
+  description: string;
+  benefit: string;
+  images: string;
+  general: string;
+}
+
+const AddProductForm: React.FC = () => {
   const router = useRouter();
   const { admin } = useAuth();
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const [categories, setCategories] = useState<ICategory[]>([]);
-  const [loadingCategories, setLoadingCategories] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [loadingCategories, setLoadingCategories] = useState<boolean>(true);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const debouncedSearchTerm = useDebounce(searchTerm, 1000);
 
   // State for form values and errors
-  const [formValues, setFormValues] = useState({
+  const [formValues, setFormValues] = useState<FormValues>({
     productName: "",
     price: "",
     stockQuantity: "",
     description: "",
     benefit: "",
   });
-  const [formErrors, setFormErrors] = useState<{
-    productName: string;
-    categories: string;
-    price: string;
-    stockQuantity: string;
-    description: string;
-    benefit: string;
-    images: string;
-    general: string; // Added general property
-  }>({
+  const [formErrors, setFormErrors] = useState<FormErrors>({
     productName: "",
     categories: "",
     price: "",
@@ -74,7 +85,7 @@ const AddProductForm = () => {
     description: "",
     benefit: "",
     images: "",
-    general: "", // Initialize general property
+    general: "",
   });
 
   useEffect(() => {
@@ -121,47 +132,58 @@ const AddProductForm = () => {
     fetchCategories();
   }, [admin, router]);
 
-  const validateField = (name: string, value: any) => {
+  const validateField = (
+    name: string,
+    value: string | string[] | number
+  ): string => {
     let error = "";
     switch (name) {
       case "productName":
-        if (!value?.trim()) {
+        if (typeof value !== "string" || !value.trim()) {
           error = "Product name cannot be empty.";
         }
         break;
       case "categories":
-        if (selectedCategories.length === 0) {
+        if (!Array.isArray(value) || value.length === 0) {
           error = "At least one category must be selected.";
         }
         break;
       case "price":
-        const priceValue = parseFloat(value);
-        if (!value) {
+        if (typeof value !== "string") {
+          error = "Price must be a valid number.";
+        } else if (!value) {
           error = "Price cannot be empty.";
-        } else if (isNaN(priceValue) || priceValue <= 0) {
-          error = "Price must be a valid positive number.";
+        } else {
+          const priceValue = parseFloat(value);
+          if (isNaN(priceValue) || priceValue <= 0) {
+            error = "Price must be a valid positive number.";
+          }
         }
         break;
       case "stockQuantity":
-        const stockValue = parseInt(value, 10);
-        if (!value) {
+        if (typeof value !== "string") {
+          error = "Stock quantity must be a valid number.";
+        } else if (!value) {
           error = "Stock quantity cannot be empty.";
-        } else if (isNaN(stockValue) || stockValue < 0) {
-          error = "Stock quantity must be a valid non-negative number.";
+        } else {
+          const stockValue = parseInt(value, 10);
+          if (isNaN(stockValue) || stockValue < 0) {
+            error = "Stock quantity must be a valid non-negative number.";
+          }
         }
         break;
       case "description":
-        if (!value?.trim()) {
+        if (typeof value !== "string" || !value.trim()) {
           error = "Description cannot be empty.";
         }
         break;
       case "benefit":
-        if (!value?.trim()) {
+        if (typeof value !== "string" || !value.trim()) {
           error = "Benefit cannot be empty.";
         }
         break;
       case "images":
-        if (selectedImages.length === 0) {
+        if (!Array.isArray(value) || value.length === 0) {
           error = "At least one image must be uploaded.";
         }
         break;
@@ -214,12 +236,12 @@ const AddProductForm = () => {
       Promise.all(newImages)
         .then((images) => {
           const filteredImages = images.filter(Boolean) as string[];
-          setSelectedImages((prev) => [...prev, ...filteredImages]);
-          const error = validateField(
-            "images",
-            filteredImages.length > 0 ? filteredImages : []
-          );
-          setFormErrors((prev) => ({ ...prev, images: error }));
+          setSelectedImages((prev) => {
+            const updatedImages = [...prev, ...filteredImages];
+            const error = validateField("images", updatedImages);
+            setFormErrors((prev) => ({ ...prev, images: error }));
+            return updatedImages;
+          });
         })
         .catch(() => {
           setFormErrors((prev) => ({
@@ -230,14 +252,24 @@ const AddProductForm = () => {
     }
   };
 
+  const handleRemoveImage = (index: number) => {
+    setSelectedImages((prev) => {
+      const newImages = prev.filter((_, i) => i !== index);
+      const error = validateField("images", newImages);
+      setFormErrors((prev) => ({ ...prev, images: error }));
+      return newImages;
+    });
+  };
+
   const handleCategoryToggle = (categoryId: string) => {
-    setSelectedCategories((prev) =>
-      prev.includes(categoryId)
+    setSelectedCategories((prev) => {
+      const newCategories = prev.includes(categoryId)
         ? prev.filter((cat) => cat !== categoryId)
-        : [...prev, categoryId]
-    );
-    const error = validateField("categories", selectedCategories);
-    setFormErrors((prev) => ({ ...prev, categories: error }));
+        : [...prev, categoryId];
+      const error = validateField("categories", newCategories);
+      setFormErrors((prev) => ({ ...prev, categories: error }));
+      return newCategories;
+    });
   };
 
   const resetForm = (form: HTMLFormElement) => {
@@ -257,7 +289,7 @@ const AddProductForm = () => {
       description: "",
       benefit: "",
       images: "",
-      general: "", // Reset general error
+      general: "",
     });
     setSelectedImages([]);
     setSelectedCategories([]);
@@ -265,8 +297,8 @@ const AddProductForm = () => {
     setSearchTerm("");
   };
 
-  const validateForm = () => {
-    const errors = {
+  const validateForm = (): boolean => {
+    const errors: FormErrors = {
       productName: validateField("productName", formValues.productName),
       categories: validateField("categories", selectedCategories),
       price: validateField("price", formValues.price),
@@ -274,20 +306,20 @@ const AddProductForm = () => {
       description: validateField("description", formValues.description),
       benefit: validateField("benefit", formValues.benefit),
       images: validateField("images", selectedImages),
-      general: "", // Reset general error on validation
+      general: "",
     };
     setFormErrors(errors);
 
-    // Return true if there are no errors
     return !Object.values(errors).some((error) => error);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
     setIsSubmitting(true);
 
     if (!admin?.token || !["admin", "editor"].includes(admin.role)) {
+      toast.error("You do not have permission to add products.");
       router.push("/admin/dashboard/products");
       setIsSubmitting(false);
       return;
@@ -295,6 +327,7 @@ const AddProductForm = () => {
 
     // Validate all fields
     if (!validateForm()) {
+      toast.error("Please fix the form errors before submitting.");
       setIsSubmitting(false);
       return;
     }
@@ -326,17 +359,20 @@ const AddProductForm = () => {
         throw new Error(result.message || "Failed to add product.");
       }
 
+      toast.success("Product added successfully!");
       resetForm(form);
       router.push("/admin/dashboard/products");
     } catch (error) {
       console.error("Add Product Error:", error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "An error occurred while adding the product.";
       setFormErrors((prev) => ({
         ...prev,
-        general:
-          error instanceof Error
-            ? error.message
-            : "An error occurred while adding the product.",
+        general: errorMessage,
       }));
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -396,11 +432,7 @@ const AddProductForm = () => {
                           />
                           <button
                             type="button"
-                            onClick={() =>
-                              setSelectedImages((prev) =>
-                                prev.filter((_, i) => i !== index)
-                              )
-                            }
+                            onClick={() => handleRemoveImage(index)}
                             className="absolute top-1 right-1 p-1 bg-red-500/80 rounded-full hover:bg-red-400 transition-colors"
                           >
                             <X className="h-4 w-4 text-white" />

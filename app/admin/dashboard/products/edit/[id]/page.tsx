@@ -170,47 +170,51 @@ const EditProductForm = () => {
     fetchData();
   }, [admin, routeId, router]);
 
-  const validateField = (name: string, value: any) => {
+  const validateField = (name: string, value: string | string[]) => {
     let error = "";
     switch (name) {
       case "name":
-        if (!value?.trim()) {
+        if (typeof value === "string" && !value.trim()) {
           error = "Product name cannot be empty.";
         }
         break;
       case "categories":
-        if (selectedCategories.length === 0) {
+        if (Array.isArray(value) && value.length === 0) {
           error = "At least one category must be selected.";
         }
         break;
       case "price":
-        const priceValue = parseFloat(value);
-        if (!value) {
-          error = "Price cannot be empty.";
-        } else if (isNaN(priceValue) || priceValue <= 0) {
-          error = "Price must be a valid positive number.";
+        if (typeof value === "string") {
+          const priceValue = parseFloat(value);
+          if (!value) {
+            error = "Price cannot be empty.";
+          } else if (isNaN(priceValue) || priceValue <= 0) {
+            error = "Price must be a valid positive number.";
+          }
         }
         break;
       case "stock":
-        const stockValue = parseInt(value, 10);
-        if (!value) {
-          error = "Stock quantity cannot be empty.";
-        } else if (isNaN(stockValue) || stockValue < 0) {
-          error = "Stock quantity must be a valid non-negative number.";
+        if (typeof value === "string") {
+          const stockValue = parseInt(value, 10);
+          if (!value) {
+            error = "Stock quantity cannot be empty.";
+          } else if (isNaN(stockValue) || stockValue < 0) {
+            error = "Stock quantity must be a valid non-negative number.";
+          }
         }
         break;
       case "description":
-        if (!value?.trim()) {
+        if (typeof value === "string" && !value.trim()) {
           error = "Description cannot be empty.";
         }
         break;
       case "benefit":
-        if (!value?.trim()) {
+        if (typeof value === "string" && !value.trim()) {
           error = "Benefit cannot be empty.";
         }
         break;
       case "images":
-        if (selectedImages.length === 0) {
+        if (Array.isArray(value) && value.length === 0) {
           error = "At least one image must be uploaded.";
         }
         break;

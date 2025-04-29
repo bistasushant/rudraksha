@@ -41,7 +41,7 @@ const RegisterForm: React.FC = () => {
   const router = useRouter();
 
   // Validation function
-  const validateField = (name: string, value: any) => {
+  const validateField = (name: string, value: string): string => {
     let error = "";
     switch (name) {
       case "name":

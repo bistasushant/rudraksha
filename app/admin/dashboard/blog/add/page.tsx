@@ -12,7 +12,7 @@ import { useAuth } from "@/app/admin/providers/AuthProviders";
 import { toast } from "sonner";
 import { IBlogcategory } from "@/types";
 
-const generateSlug = (name: string) => {
+const generateSlug = (name: string): string => {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9 -]/g, "")
@@ -20,7 +20,7 @@ const generateSlug = (name: string) => {
     .trim();
 };
 
-const useDebounce = (value: string, delay: number) => {
+const useDebounce = (value: string, delay: number): string => {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
   useEffect(() => {
@@ -36,7 +36,7 @@ const useDebounce = (value: string, delay: number) => {
   return debouncedValue;
 };
 
-const AddBlogForm = () => {
+const AddBlogForm: React.FC = () => {
   const router = useRouter();
   const { admin } = useAuth();
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -116,38 +116,41 @@ const AddBlogForm = () => {
     fetchBlogCategories();
   }, [admin, router]);
 
-  // Validation function
-  const validateField = (name: string, value: any) => {
+  // Validation function with specific types
+  const validateField = (
+    name: string,
+    value: string | string[] | null
+  ): string => {
     let error = "";
     switch (name) {
       case "blogName":
-        if (!value?.trim()) {
+        if (typeof value !== "string" || !value.trim()) {
           error = "Blog name cannot be empty.";
         } else if (value.trim().length < 3) {
           error = "Blog name must be at least 3 characters long.";
         }
         break;
       case "blogHeading":
-        if (!value?.trim()) {
+        if (typeof value !== "string" || !value.trim()) {
           error = "Blog heading cannot be empty.";
         } else if (value.trim().length < 3) {
           error = "Blog heading must be at least 3 characters long.";
         }
         break;
       case "blogDescription":
-        if (!value?.trim()) {
+        if (typeof value !== "string" || !value.trim()) {
           error = "Blog description cannot be empty.";
         } else if (value.trim().length < 10) {
           error = "Blog description must be at least 10 characters long.";
         }
         break;
       case "selectedCategories":
-        if (value.length === 0) {
+        if (!Array.isArray(value) || value.length === 0) {
           error = "At least one category must be selected.";
         }
         break;
       case "image":
-        if (!value) {
+        if (value === null || value === "") {
           error = "Blog image is required.";
         }
         break;
@@ -223,7 +226,7 @@ const AddBlogForm = () => {
   };
 
   // Validate entire form before submission
-  const validateForm = () => {
+  const validateForm = (): boolean => {
     const errors = {
       blogName: validateField("blogName", blogName),
       blogHeading: validateField("blogHeading", blogHeading),
@@ -259,7 +262,7 @@ const AddBlogForm = () => {
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
     setIsSubmitting(true);
@@ -307,18 +310,15 @@ const AddBlogForm = () => {
       router.push("/admin/dashboard/blog");
     } catch (error) {
       console.error("Add Blog Error:", error);
-      setFormErrors((prev) => ({
-        ...prev,
-        general:
-          error instanceof Error
-            ? error.message
-            : "An error occurred while adding the blog.",
-      }));
-      toast.error(
+      const errorMessage =
         error instanceof Error
           ? error.message
-          : "An error occurred while adding the blog."
-      );
+          : "An error occurred while adding the blog.";
+      setFormErrors((prev) => ({
+        ...prev,
+        general: errorMessage,
+      }));
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }

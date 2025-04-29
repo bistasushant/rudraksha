@@ -12,7 +12,16 @@ import { toast } from "sonner";
 import { IBlog } from "@/types";
 import Image from "next/image";
 
-const EditBlogForm = () => {
+interface FormData {
+  id: string;
+  name: string;
+  heading: string;
+  description: string;
+  slug: string;
+  image: string;
+}
+
+const EditBlogForm: React.FC = () => {
   const router = useRouter();
   const params = useParams();
   const routeId = params.id as string;
@@ -21,7 +30,7 @@ const EditBlogForm = () => {
   const [originalSlug, setOriginalSlug] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { admin } = useAuth();
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     id: "",
     name: "",
     heading: "",
@@ -124,26 +133,26 @@ const EditBlogForm = () => {
     fetchData();
   }, [admin, routeId, router]);
 
-  // Validation function
-  const validateField = (name: string, value: any) => {
+  // Validation function with specific type
+  const validateField = (name: string, value: string): string => {
     let error = "";
     switch (name) {
       case "name":
-        if (!value?.trim()) {
+        if (!value.trim()) {
           error = "Blog name cannot be empty.";
         } else if (value.trim().length < 3) {
           error = "Blog name must be at least 3 characters long.";
         }
         break;
       case "heading":
-        if (!value?.trim()) {
+        if (!value.trim()) {
           error = "Blog heading cannot be empty.";
         } else if (value.trim().length < 3) {
           error = "Blog heading must be at least 3 characters long.";
         }
         break;
       case "description":
-        if (!value?.trim()) {
+        if (!value.trim()) {
           error = "Blog description cannot be empty.";
         } else if (value.trim().length < 10) {
           error = "Blog description must be at least 10 characters long.";
@@ -234,7 +243,7 @@ const EditBlogForm = () => {
   };
 
   // Validate entire form before submission
-  const validateForm = () => {
+  const validateForm = (): boolean => {
     const errors = {
       name: validateField("name", formData.name),
       heading: validateField("heading", formData.heading),
@@ -247,7 +256,7 @@ const EditBlogForm = () => {
     return !Object.values(errors).some((error) => error);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
 
@@ -305,14 +314,13 @@ const EditBlogForm = () => {
       router.push("/admin/dashboard/blog");
     } catch (error) {
       console.error("Update error:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to update blog";
       setFormErrors((prev) => ({
         ...prev,
-        general:
-          error instanceof Error ? error.message : "Failed to update blog",
+        general: errorMessage,
       }));
-      toast.error(
-        error instanceof Error ? error.message : "Failed to update blog"
-      );
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
